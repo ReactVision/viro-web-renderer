@@ -1,5 +1,5 @@
-import { loadViroWebModule } from "./loader";
-import type { ViroWebModule, ViroWebRendererOptions } from "./types";
+import { loadViroWebModule } from "./loader.js";
+import type { ViroWebModule, ViroWebRendererOptions } from "./types.js";
 
 let selectorCounter = 0;
 

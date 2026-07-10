@@ -4,11 +4,11 @@
  * WebAssembly/WebGL2 build of the Viro renderer (virocore) for the web platform.
  */
 
-export { ViroWebRenderer } from "./ViroWebRenderer";
-export { loadViroWebModule } from "./loader";
+export { ViroWebRenderer } from "./ViroWebRenderer.js";
+export { loadViroWebModule } from "./loader.js";
 export type {
   ViroWebModule,
   ViroWebModuleFactory,
   ViroWebRendererOptions,
   LocateFile,
-} from "./types";
+} from "./types.js";
