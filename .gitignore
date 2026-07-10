@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tgz
+
+# WASM build artifacts are copied in from virocore/wasm by scripts/copy-wasm.sh.
+# They are NOT tracked in git, but ARE shipped to npm (see "files" in package.json).
+wasm/viro-web.js
+wasm/viro-web.wasm
+wasm/viro-web.data

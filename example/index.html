@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>viro-web-renderer — example</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #1a1a1f; }
+      #wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; }
+      #viroCanvas { width: 90vw; max-width: 800px; aspect-ratio: 4 / 3; display: block; background: #000; touch-action: none; }
+      #status { font: 13px/1.4 -apple-system, system-ui, sans-serif; color: #9aa; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <canvas id="viroCanvas"></canvas>
+      <div id="status">loading…</div>
+    </div>
+
+    <!-- Uses the built package API (dist/). Serve the package root over http(s):
+           cd .. && python3 -m http.server 8080
+           open http://localhost:8080/example/ -->
+    <script type="module">
+      import { ViroWebRenderer } from "../dist/index.js";
+
+      const status = document.getElementById("status");
+      try {
+        const renderer = await ViroWebRenderer.create({
+          canvas: document.getElementById("viroCanvas"),
+        });
+        status.textContent = "rendering (spinning cube)";
+        window.addEventListener("resize", () => renderer.resize());
+      } catch (err) {
+        status.textContent = "failed: " + err;
+        console.error(err);
+      }
+    </script>
+  </body>
+</html>
