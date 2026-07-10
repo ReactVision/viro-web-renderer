@@ -59,6 +59,7 @@ function computeSize(
  */
 export class ViroWebRenderer {
   private disposed = false;
+  private detachInput?: () => void;
 
   private constructor(
     private readonly module: ViroWebModule,
@@ -76,7 +77,40 @@ export class ViroWebRenderer {
     const module = await loadViroWebModule(canvas, options.locateFile);
     module.initViroScene(selector, width, height);
 
-    return new ViroWebRenderer(module, canvas);
+    const renderer = new ViroWebRenderer(module, canvas);
+    renderer.attachInput();
+    return renderer;
+  }
+
+  /**
+   * Forward canvas pointer events to the renderer as touch actions, converting
+   * CSS coordinates to the canvas's device-pixel backing store.
+   */
+  private attachInput(): void {
+    const canvas = this.canvas;
+    const send = (action: number, e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+      this.module.viroOnTouch(action, x, y);
+    };
+
+    const onDown = (e: PointerEvent) => send(0, e);
+    const onMove = (e: PointerEvent) => send(1, e);
+    const onUp = (e: PointerEvent) => send(2, e);
+
+    canvas.addEventListener("pointerdown", onDown);
+    canvas.addEventListener("pointermove", onMove);
+    canvas.addEventListener("pointerup", onUp);
+    canvas.addEventListener("pointercancel", onUp);
+
+    this.detachInput = () => {
+      canvas.removeEventListener("pointerdown", onDown);
+      canvas.removeEventListener("pointermove", onMove);
+      canvas.removeEventListener("pointerup", onUp);
+      canvas.removeEventListener("pointercancel", onUp);
+    };
   }
 
   /** Resize the renderer viewport. Omit args to recompute from the canvas's CSS size. */
@@ -104,6 +138,8 @@ export class ViroWebRenderer {
    * is a follow-up. For now this just marks the instance unusable.
    */
   dispose(): void {
+    this.detachInput?.();
+    this.detachInput = undefined;
     this.disposed = true;
   }
 

@@ -16,6 +16,9 @@ export interface ViroWebModule {
   /** Update the renderer's viewport size (device pixels). */
   setViroSceneSize(width: number, height: number): void;
 
+  /** Feed a pointer/touch event. action: 0 = down, 1 = move, 2 = up. x/y in device pixels. */
+  viroOnTouch(action: number, x: number, y: number): void;
+
   canvas?: HTMLCanvasElement;
   // Emscripten runtime internals (locateFile, HEAPU8, etc.) are not typed here.
   [key: string]: unknown;
