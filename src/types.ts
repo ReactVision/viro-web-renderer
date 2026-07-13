@@ -46,6 +46,21 @@ export interface ViroWebModule {
   viroSetMaterialLightingModel(material: number, model: number): void;
   viroDestroyMaterial(material: number): void;
 
+  // Events: register one callback; WASM invokes it as
+  // (nodeHandle, eventAction, source, intArg, x, y, z).
+  viroSetEventCallback(
+    callback: (
+      nodeHandle: number,
+      eventAction: number,
+      source: number,
+      intArg: number,
+      x: number,
+      y: number,
+      z: number,
+    ) => void,
+  ): void;
+  viroSetNodeEventEnabled(node: number, eventAction: number, enabled: boolean): void;
+
   canvas?: HTMLCanvasElement;
   // Emscripten runtime internals (locateFile, HEAPU8, etc.) are not typed here.
   [key: string]: unknown;

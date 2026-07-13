@@ -1,5 +1,10 @@
 import { loadViroWebModule } from "./loader.js";
-import { ViroSceneApi } from "./sceneApi.js";
+import {
+  ViroSceneApi,
+  ViroEventAction,
+  type ViroHandle,
+  type ViroNodeEventHandlers,
+} from "./sceneApi.js";
 import type { ViroWebModule, ViroWebRendererOptions } from "./types.js";
 
 let selectorCounter = 0;
@@ -62,17 +67,50 @@ export class ViroWebRenderer {
   private disposed = false;
   private detachInput?: () => void;
   private readonly _scene: ViroSceneApi;
+  private readonly eventHandlers = new Map<ViroHandle, ViroNodeEventHandlers>();
 
   private constructor(
     private readonly module: ViroWebModule,
     private readonly canvas: HTMLCanvasElement,
   ) {
     this._scene = new ViroSceneApi(module);
+    // One native callback fans events out to per-node handlers.
+    module.viroSetEventCallback(
+      (handle, action, source, intArg, x, y, z) => {
+        this.dispatchEvent(handle, action, source, intArg, [x, y, z]);
+      },
+    );
   }
 
   /** Typed scene-graph API the bridge reconciler drives to build/update the scene. */
   get scene(): ViroSceneApi {
     return this._scene;
+  }
+
+  /** Register (or replace) event handlers for a node handle. */
+  setNodeEventHandlers(handle: ViroHandle, handlers: ViroNodeEventHandlers): void {
+    this.eventHandlers.set(handle, handlers);
+  }
+
+  /** Remove a node's event handlers (call on unmount). */
+  clearNodeEventHandlers(handle: ViroHandle): void {
+    this.eventHandlers.delete(handle);
+  }
+
+  private dispatchEvent(
+    handle: ViroHandle,
+    action: number,
+    source: number,
+    intArg: number,
+    position: [number, number, number],
+  ): void {
+    const handlers = this.eventHandlers.get(handle);
+    if (!handlers) return;
+    if (action === ViroEventAction.Click) {
+      handlers.onClick?.(intArg, source, position);
+    } else if (action === ViroEventAction.Hover) {
+      handlers.onHover?.(intArg === 1, source, position);
+    }
   }
 
   static async create(options: ViroWebRendererOptions): Promise<ViroWebRenderer> {

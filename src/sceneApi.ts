@@ -14,6 +14,34 @@ export enum ViroLightingModel {
   PhysicallyBased = 4,
 }
 
+/** Mirrors VROEventDelegate::EventAction (VROEventDelegate.h). */
+export enum ViroEventAction {
+  Hover = 1,
+  Click = 2,
+  Touch = 3,
+}
+
+/** Mirrors VROEventDelegate::ClickState. */
+export enum ViroClickState {
+  ClickDown = 1,
+  ClickUp = 2,
+  Clicked = 3,
+}
+
+/** Handlers a node registers for its events. position is world-space [x,y,z]. */
+export interface ViroNodeEventHandlers {
+  onClick?: (
+    clickState: ViroClickState,
+    source: number,
+    position: [number, number, number],
+  ) => void;
+  onHover?: (
+    isHovering: boolean,
+    source: number,
+    position: [number, number, number],
+  ) => void;
+}
+
 /**
  * Typed, ergonomic facade over the WASM scene-graph C API. The TS bridge
  * reconciler drives these methods; handles are opaque ints owned by the WASM
@@ -55,6 +83,9 @@ export class ViroSceneApi {
   }
   destroyNode(node: ViroHandle): void {
     this.m.viroDestroyNode(node);
+  }
+  setNodeEventEnabled(node: ViroHandle, action: ViroEventAction, enabled: boolean): void {
+    this.m.viroSetNodeEventEnabled(node, action, enabled);
   }
 
   // --- Geometries ---
