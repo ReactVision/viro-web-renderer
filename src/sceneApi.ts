@@ -14,6 +14,48 @@ export enum ViroLightingModel {
   PhysicallyBased = 4,
 }
 
+/** Texture channel on a material (matches viroSetMaterialTexture in VROSceneWeb.cpp). */
+export enum ViroTextureChannel {
+  Diffuse = 0,
+  Specular = 1,
+  Normal = 2,
+  Roughness = 3,
+  Metalness = 4,
+  AmbientOcclusion = 5,
+}
+
+/** Mirrors VROWrapMode (VROTexture.h). */
+export enum ViroWrapMode {
+  Clamp = 0,
+  Repeat = 1,
+  ClampToBorder = 2,
+  Mirror = 3,
+}
+
+/** Mirrors VROFilterMode (VROTexture.h). */
+export enum ViroFilterMode {
+  None = 0,
+  Nearest = 1,
+  Linear = 2,
+}
+
+/** Mirrors VROCullMode (VROMaterial.h). */
+export enum ViroCullMode {
+  Back = 0,
+  Front = 1,
+  None = 2,
+}
+
+/** Mirrors VROBlendMode (VROMaterial.h) subset exposed to web. */
+export enum ViroBlendMode {
+  None = 0,
+  Alpha = 1,
+  Add = 2,
+  Multiply = 3,
+  Subtract = 4,
+  Screen = 5,
+}
+
 /** Mirrors VROLightType (VROLight.h). */
 export enum ViroLightType {
   Ambient = 0,
@@ -129,8 +171,62 @@ export class ViroSceneApi {
   setMaterialLightingModel(material: ViroHandle, model: ViroLightingModel): void {
     this.m.viroSetMaterialLightingModel(material, model);
   }
+  setMaterialShininess(material: ViroHandle, shininess: number): void {
+    this.m.viroSetMaterialShininess(material, shininess);
+  }
+  setMaterialFresnelExponent(material: ViroHandle, fresnel: number): void {
+    this.m.viroSetMaterialFresnelExponent(material, fresnel);
+  }
+  setMaterialRoughness(material: ViroHandle, roughness: number): void {
+    this.m.viroSetMaterialRoughness(material, roughness);
+  }
+  setMaterialMetalness(material: ViroHandle, metalness: number): void {
+    this.m.viroSetMaterialMetalness(material, metalness);
+  }
+  setMaterialDiffuseIntensity(material: ViroHandle, intensity: number): void {
+    this.m.viroSetMaterialDiffuseIntensity(material, intensity);
+  }
+  setMaterialCullMode(material: ViroHandle, mode: ViroCullMode): void {
+    this.m.viroSetMaterialCullMode(material, mode);
+  }
+  setMaterialBlendMode(material: ViroHandle, mode: ViroBlendMode): void {
+    this.m.viroSetMaterialBlendMode(material, mode);
+  }
+  setMaterialWritesToDepthBuffer(material: ViroHandle, writes: boolean): void {
+    this.m.viroSetMaterialWritesToDepthBuffer(material, writes);
+  }
+  setMaterialReadsFromDepthBuffer(material: ViroHandle, reads: boolean): void {
+    this.m.viroSetMaterialReadsFromDepthBuffer(material, reads);
+  }
   destroyMaterial(material: ViroHandle): void {
     this.m.viroDestroyMaterial(material);
+  }
+
+  // --- Textures ---
+  createTextureRGBA(
+    pixels: Uint8Array | number[],
+    width: number,
+    height: number,
+    sRGB: boolean,
+  ): ViroHandle {
+    return this.m.viroCreateTextureRGBA(pixels, width, height, sRGB);
+  }
+  setTextureWrap(texture: ViroHandle, wrapS: ViroWrapMode, wrapT: ViroWrapMode): void {
+    this.m.viroSetTextureWrap(texture, wrapS, wrapT);
+  }
+  setTextureFilter(
+    texture: ViroHandle,
+    min: ViroFilterMode,
+    mag: ViroFilterMode,
+    mip: ViroFilterMode,
+  ): void {
+    this.m.viroSetTextureFilter(texture, min, mag, mip);
+  }
+  setMaterialTexture(material: ViroHandle, channel: ViroTextureChannel, texture: ViroHandle): void {
+    this.m.viroSetMaterialTexture(material, channel, texture);
+  }
+  destroyTexture(texture: ViroHandle): void {
+    this.m.viroDestroyTexture(texture);
   }
 
   // --- Lights ---

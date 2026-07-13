@@ -12,6 +12,11 @@ export {
   ViroLightType,
   ViroEventAction,
   ViroClickState,
+  ViroTextureChannel,
+  ViroWrapMode,
+  ViroFilterMode,
+  ViroCullMode,
+  ViroBlendMode,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type { ViroHandle, ViroNodeEventHandlers } from "./sceneApi.js";

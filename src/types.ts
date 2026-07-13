@@ -45,6 +45,27 @@ export interface ViroWebModule {
   viroSetMaterialDiffuseColor(material: number, r: number, g: number, b: number, a: number): void;
   viroSetMaterialLightingModel(material: number, model: number): void;
   viroDestroyMaterial(material: number): void;
+  viroSetMaterialShininess(material: number, shininess: number): void;
+  viroSetMaterialFresnelExponent(material: number, fresnel: number): void;
+  viroSetMaterialRoughness(material: number, roughness: number): void;
+  viroSetMaterialMetalness(material: number, metalness: number): void;
+  viroSetMaterialDiffuseIntensity(material: number, intensity: number): void;
+  viroSetMaterialCullMode(material: number, mode: number): void;
+  viroSetMaterialBlendMode(material: number, mode: number): void;
+  viroSetMaterialWritesToDepthBuffer(material: number, writes: boolean): void;
+  viroSetMaterialReadsFromDepthBuffer(material: number, reads: boolean): void;
+
+  // Textures. pixels is an RGBA8 buffer (width*height*4 bytes).
+  viroCreateTextureRGBA(
+    pixels: Uint8Array | number[],
+    width: number,
+    height: number,
+    sRGB: boolean,
+  ): number;
+  viroSetTextureWrap(texture: number, wrapS: number, wrapT: number): void;
+  viroSetTextureFilter(texture: number, min: number, mag: number, mip: number): void;
+  viroSetMaterialTexture(material: number, channel: number, texture: number): void;
+  viroDestroyTexture(texture: number): void;
 
   // Events: register one callback; WASM invokes it as
   // (nodeHandle, eventAction, source, intArg, x, y, z).
