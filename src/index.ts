@@ -6,6 +6,8 @@
 
 export { ViroWebRenderer } from "./ViroWebRenderer.js";
 export { loadViroWebModule } from "./loader.js";
+export { ViroSceneApi, ViroLightingModel, VIRO_INVALID_HANDLE } from "./sceneApi.js";
+export type { ViroHandle } from "./sceneApi.js";
 export type {
   ViroWebModule,
   ViroWebModuleFactory,

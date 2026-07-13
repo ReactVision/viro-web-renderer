@@ -1,4 +1,5 @@
 import { loadViroWebModule } from "./loader.js";
+import { ViroSceneApi } from "./sceneApi.js";
 import type { ViroWebModule, ViroWebRendererOptions } from "./types.js";
 
 let selectorCounter = 0;
@@ -60,11 +61,19 @@ function computeSize(
 export class ViroWebRenderer {
   private disposed = false;
   private detachInput?: () => void;
+  private readonly _scene: ViroSceneApi;
 
   private constructor(
     private readonly module: ViroWebModule,
     private readonly canvas: HTMLCanvasElement,
-  ) {}
+  ) {
+    this._scene = new ViroSceneApi(module);
+  }
+
+  /** Typed scene-graph API the bridge reconciler drives to build/update the scene. */
+  get scene(): ViroSceneApi {
+    return this._scene;
+  }
 
   static async create(options: ViroWebRendererOptions): Promise<ViroWebRenderer> {
     const canvas = resolveCanvas(options.canvas);

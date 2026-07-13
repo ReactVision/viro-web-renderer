@@ -21,14 +21,39 @@
            cd .. && python3 -m http.server 8080
            open http://localhost:8080/example/ -->
     <script type="module">
-      import { ViroWebRenderer } from "../dist/index.js";
+      import { ViroWebRenderer, ViroLightingModel } from "../dist/index.js";
 
       const status = document.getElementById("status");
       try {
         const renderer = await ViroWebRenderer.create({
           canvas: document.getElementById("viroCanvas"),
         });
-        status.textContent = "rendering (spinning cube)";
+
+        // Build a cube entirely through the handle-based scene C API — exercises
+        // node/geometry/material creation, materials, and parenting end-to-end.
+        const s = renderer.scene;
+        const root = s.getRootNode();
+
+        const material = s.createMaterial();
+        s.setMaterialDiffuseColor(material, 0.2, 0.6, 1.0, 1.0);
+        s.setMaterialLightingModel(material, ViroLightingModel.Blinn);
+
+        const box = s.createBox(2, 2, 2);
+        s.setGeometryMaterial(box, material);
+
+        const node = s.createNode();
+        s.setNodeGeometry(node, box);
+        s.setNodePosition(node, 0, 0, -5);
+        s.addChildNode(root, node);
+
+        // Spin the cube from JS to prove per-frame C API updates work.
+        let angle = 0;
+        setInterval(() => {
+          angle += 0.02;
+          s.setNodeRotation(node, 0, angle, 0);
+        }, 16);
+
+        status.textContent = "rendering (cube built via C API)";
         window.addEventListener("resize", () => renderer.resize());
       } catch (err) {
         status.textContent = "failed: " + err;
