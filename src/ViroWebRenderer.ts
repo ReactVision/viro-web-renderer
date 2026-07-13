@@ -83,7 +83,11 @@ export class ViroWebRenderer {
     canvas.width = width;
     canvas.height = height;
 
-    const module = await loadViroWebModule(canvas, options.locateFile);
+    const module = await loadViroWebModule(canvas, {
+      locateFile: options.locateFile,
+      baseUrl: options.assetBaseUrl,
+      importGlue: options.importGlue,
+    });
     module.initViroScene(selector, width, height);
 
     const renderer = new ViroWebRenderer(module, canvas);

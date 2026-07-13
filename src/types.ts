@@ -67,4 +67,15 @@ export interface ViroWebRendererOptions {
   height?: number;
   /** Override how the .wasm/.data sidecars are located (advanced/bundler use). */
   locateFile?: LocateFile;
+  /**
+   * Base URL (dir) where viro-web.js/.wasm/.data are served. Set this when a
+   * bundler rewrites import.meta.url (Vite/webpack) or when hosting assets on a
+   * CDN/public path. Also settable globally via globalThis.VIRO_WEB_ASSET_BASE.
+   */
+  assetBaseUrl?: string;
+  /**
+   * Custom loader for the Emscripten glue module (for bundlers that can't
+   * dynamically import a runtime URL). See LoadOptions.importGlue.
+   */
+  importGlue?: () => Promise<{ default?: ViroWebModuleFactory } | ViroWebModuleFactory>;
 }
