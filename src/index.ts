@@ -9,6 +9,7 @@ export { loadViroWebModule } from "./loader.js";
 export {
   ViroSceneApi,
   ViroLightingModel,
+  ViroLightType,
   ViroEventAction,
   ViroClickState,
   VIRO_INVALID_HANDLE,

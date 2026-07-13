@@ -14,6 +14,14 @@ export enum ViroLightingModel {
   PhysicallyBased = 4,
 }
 
+/** Mirrors VROLightType (VROLight.h). */
+export enum ViroLightType {
+  Ambient = 0,
+  Directional = 1,
+  Omni = 2,
+  Spot = 3,
+}
+
 /** Mirrors VROEventDelegate::EventAction (VROEventDelegate.h). */
 export enum ViroEventAction {
   Hover = 1,
@@ -123,5 +131,51 @@ export class ViroSceneApi {
   }
   destroyMaterial(material: ViroHandle): void {
     this.m.viroDestroyMaterial(material);
+  }
+
+  // --- Lights ---
+  createLight(type: ViroLightType): ViroHandle {
+    return this.m.viroCreateLight(type);
+  }
+  setLightColor(light: ViroHandle, r: number, g: number, b: number): void {
+    this.m.viroSetLightColor(light, r, g, b);
+  }
+  setLightIntensity(light: ViroHandle, intensity: number): void {
+    this.m.viroSetLightIntensity(light, intensity);
+  }
+  setLightTemperature(light: ViroHandle, temperature: number): void {
+    this.m.viroSetLightTemperature(light, temperature);
+  }
+  setLightDirection(light: ViroHandle, x: number, y: number, z: number): void {
+    this.m.viroSetLightDirection(light, x, y, z);
+  }
+  setLightPosition(light: ViroHandle, x: number, y: number, z: number): void {
+    this.m.viroSetLightPosition(light, x, y, z);
+  }
+  setLightAttenuation(light: ViroHandle, start: number, end: number): void {
+    this.m.viroSetLightAttenuation(light, start, end);
+  }
+  setLightSpotAngles(light: ViroHandle, inner: number, outer: number): void {
+    this.m.viroSetLightSpotAngles(light, inner, outer);
+  }
+  setLightCastsShadow(light: ViroHandle, castsShadow: boolean): void {
+    this.m.viroSetLightCastsShadow(light, castsShadow);
+  }
+  addLightToNode(node: ViroHandle, light: ViroHandle): void {
+    this.m.viroAddLightToNode(node, light);
+  }
+  removeLightFromNode(node: ViroHandle, light: ViroHandle): void {
+    this.m.viroRemoveLightFromNode(node, light);
+  }
+  destroyLight(light: ViroHandle): void {
+    this.m.viroDestroyLight(light);
+  }
+
+  // --- Camera ---
+  setNodeCamera(node: ViroHandle): void {
+    this.m.viroSetNodeCamera(node);
+  }
+  setActiveCameraNode(node: ViroHandle): void {
+    this.m.viroSetActiveCameraNode(node);
   }
 }

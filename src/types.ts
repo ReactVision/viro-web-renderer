@@ -61,6 +61,24 @@ export interface ViroWebModule {
   ): void;
   viroSetNodeEventEnabled(node: number, eventAction: number, enabled: boolean): void;
 
+  // Lights. type: 0=Ambient, 1=Directional, 2=Omni, 3=Spot.
+  viroCreateLight(type: number): number;
+  viroSetLightColor(light: number, r: number, g: number, b: number): void;
+  viroSetLightIntensity(light: number, intensity: number): void;
+  viroSetLightTemperature(light: number, temperature: number): void;
+  viroSetLightDirection(light: number, x: number, y: number, z: number): void;
+  viroSetLightPosition(light: number, x: number, y: number, z: number): void;
+  viroSetLightAttenuation(light: number, start: number, end: number): void;
+  viroSetLightSpotAngles(light: number, inner: number, outer: number): void;
+  viroSetLightCastsShadow(light: number, castsShadow: boolean): void;
+  viroAddLightToNode(node: number, light: number): void;
+  viroRemoveLightFromNode(node: number, light: number): void;
+  viroDestroyLight(light: number): void;
+
+  // Camera.
+  viroSetNodeCamera(node: number): void;
+  viroSetActiveCameraNode(node: number): void;
+
   canvas?: HTMLCanvasElement;
   // Emscripten runtime internals (locateFile, HEAPU8, etc.) are not typed here.
   [key: string]: unknown;
