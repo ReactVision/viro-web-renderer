@@ -2,10 +2,17 @@ import { loadViroWebModule } from "./loader.js";
 import {
   ViroSceneApi,
   ViroEventAction,
+  ViroModelFormat,
   type ViroHandle,
   type ViroNodeEventHandlers,
 } from "./sceneApi.js";
 import type { ViroWebModule, ViroWebRendererOptions } from "./types.js";
+
+const MODEL_EXT: Record<ViroModelFormat, string> = {
+  [ViroModelFormat.GLB]: "glb",
+  [ViroModelFormat.GLTF]: "gltf",
+  [ViroModelFormat.VRX]: "vrx",
+};
 
 let selectorCounter = 0;
 
@@ -68,6 +75,7 @@ export class ViroWebRenderer {
   private detachInput?: () => void;
   private readonly _scene: ViroSceneApi;
   private readonly eventHandlers = new Map<ViroHandle, ViroNodeEventHandlers>();
+  private readonly modelLoadResolvers = new Map<ViroHandle, (success: boolean) => void>();
 
   private constructor(
     private readonly module: ViroWebModule,
@@ -80,6 +88,38 @@ export class ViroWebRenderer {
         this.dispatchEvent(handle, action, source, intArg, [x, y, z]);
       },
     );
+    // One native callback resolves per-node model-load promises.
+    module.viroSetModelLoadCallback((handle, success) => {
+      const resolve = this.modelLoadResolvers.get(handle);
+      if (resolve) {
+        this.modelLoadResolvers.delete(handle);
+        resolve(success);
+      }
+    });
+  }
+
+  /**
+   * Load a model (GLB/glTF/VRX) into a node handle. Writes the bytes to the
+   * WASM virtual FS, then invokes the native loader. Resolves when the loader
+   * finishes (texture hydration continues asynchronously afterward).
+   */
+  loadModel(
+    nodeHandle: ViroHandle,
+    bytes: Uint8Array,
+    format: ViroModelFormat,
+    resources: Array<{ name: string; bytes: Uint8Array }> = [],
+  ): Promise<boolean> {
+    // External resources (e.g. a VRX's PNG textures) must be written to the FS
+    // under the names the model references, so the loader resolves them.
+    for (const res of resources) {
+      this.module.FS.writeFile(`/${res.name}`, res.bytes);
+    }
+    const path = `/viro_model_${nodeHandle}.${MODEL_EXT[format]}`;
+    this.module.FS.writeFile(path, bytes);
+    return new Promise<boolean>((resolve) => {
+      this.modelLoadResolvers.set(nodeHandle, resolve);
+      this.module.viroLoadModel(nodeHandle, path, format);
+    });
   }
 
   /** Typed scene-graph API the bridge reconciler drives to build/update the scene. */

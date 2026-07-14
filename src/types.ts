@@ -100,6 +100,18 @@ export interface ViroWebModule {
   viroSetNodeCamera(node: number): void;
   viroSetActiveCameraNode(node: number): void;
 
+  // Model loading. The bridge writes the file to FS then calls viroLoadModel.
+  // format: 0=GLB, 1=glTF, 2=VRX. Callback: (nodeHandle, success).
+  viroSetModelLoadCallback(callback: (nodeHandle: number, success: boolean) => void): void;
+  viroLoadModel(nodeHandle: number, path: string, format: number): void;
+
+  // Emscripten virtual filesystem (exported via EXPORTED_RUNTIME_METHODS=[...,FS]).
+  FS: {
+    writeFile(path: string, data: Uint8Array | string): void;
+    mkdirTree?(path: string): void;
+    unlink?(path: string): void;
+  };
+
   canvas?: HTMLCanvasElement;
   // Emscripten runtime internals (locateFile, HEAPU8, etc.) are not typed here.
   [key: string]: unknown;

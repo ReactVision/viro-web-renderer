@@ -17,6 +17,7 @@ export {
   ViroFilterMode,
   ViroCullMode,
   ViroBlendMode,
+  ViroModelFormat,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type { ViroHandle, ViroNodeEventHandlers } from "./sceneApi.js";

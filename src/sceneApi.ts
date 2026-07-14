@@ -56,6 +56,13 @@ export enum ViroBlendMode {
   Screen = 5,
 }
 
+/** Model container format for loadModel (matches viroLoadModel in VROSceneWeb.cpp). */
+export enum ViroModelFormat {
+  GLB = 0,
+  GLTF = 1,
+  VRX = 2,
+}
+
 /** Mirrors VROLightType (VROLight.h). */
 export enum ViroLightType {
   Ambient = 0,
