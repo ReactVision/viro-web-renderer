@@ -20,7 +20,11 @@ export {
   ViroModelFormat,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
-export type { ViroHandle, ViroNodeEventHandlers } from "./sceneApi.js";
+export type {
+  ViroHandle,
+  ViroNodeEventHandlers,
+  ViroAnimationHandlers,
+} from "./sceneApi.js";
 export type {
   ViroWebModule,
   ViroWebModuleFactory,

@@ -5,6 +5,7 @@ import {
   ViroModelFormat,
   type ViroHandle,
   type ViroNodeEventHandlers,
+  type ViroAnimationHandlers,
 } from "./sceneApi.js";
 import type { ViroWebModule, ViroWebRendererOptions } from "./types.js";
 
@@ -76,6 +77,7 @@ export class ViroWebRenderer {
   private readonly _scene: ViroSceneApi;
   private readonly eventHandlers = new Map<ViroHandle, ViroNodeEventHandlers>();
   private readonly modelLoadResolvers = new Map<ViroHandle, (success: boolean) => void>();
+  private readonly animationHandlers = new Map<ViroHandle, ViroAnimationHandlers>();
 
   private constructor(
     private readonly module: ViroWebModule,
@@ -96,6 +98,23 @@ export class ViroWebRenderer {
         resolve(success);
       }
     });
+    // One native callback fans animation start/finish out to per-node handlers.
+    module.viroSetAnimationCallback((handle, eventType) => {
+      const handlers = this.animationHandlers.get(handle);
+      if (!handlers) return;
+      if (eventType === 0) handlers.onStart?.();
+      else if (eventType === 1) handlers.onFinish?.();
+    });
+  }
+
+  /** Register (or replace) animation lifecycle handlers for a node. */
+  setNodeAnimationHandlers(handle: ViroHandle, handlers: ViroAnimationHandlers): void {
+    this.animationHandlers.set(handle, handlers);
+  }
+
+  /** Remove a node's animation handlers. */
+  clearNodeAnimationHandlers(handle: ViroHandle): void {
+    this.animationHandlers.delete(handle);
   }
 
   /**

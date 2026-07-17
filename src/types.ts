@@ -105,6 +105,14 @@ export interface ViroWebModule {
   viroSetModelLoadCallback(callback: (nodeHandle: number, success: boolean) => void): void;
   viroLoadModel(nodeHandle: number, path: string, format: number): void;
 
+  // Model animations. Callback: (nodeHandle, eventType) 0=start, 1=finish.
+  viroSetAnimationCallback(callback: (nodeHandle: number, eventType: number) => void): void;
+  viroGetAnimationKeys(nodeHandle: number): string[];
+  viroStartAnimation(nodeHandle: number, name: string, loop: boolean): void;
+  viroPauseAnimation(nodeHandle: number): void;
+  viroResumeAnimation(nodeHandle: number): void;
+  viroStopAnimation(nodeHandle: number, jumpToEnd: boolean): void;
+
   // Emscripten virtual filesystem (exported via EXPORTED_RUNTIME_METHODS=[...,FS]).
   FS: {
     writeFile(path: string, data: Uint8Array | string): void;

@@ -85,6 +85,12 @@ export enum ViroClickState {
   Clicked = 3,
 }
 
+/** Handlers for a node's model animation lifecycle. */
+export interface ViroAnimationHandlers {
+  onStart?: () => void;
+  onFinish?: () => void;
+}
+
 /** Handlers a node registers for its events. position is world-space [x,y,z]. */
 export interface ViroNodeEventHandlers {
   onClick?: (
@@ -280,5 +286,22 @@ export class ViroSceneApi {
   }
   setActiveCameraNode(node: ViroHandle): void {
     this.m.viroSetActiveCameraNode(node);
+  }
+
+  // --- Model animations ---
+  getAnimationKeys(node: ViroHandle): string[] {
+    return this.m.viroGetAnimationKeys(node);
+  }
+  startAnimation(node: ViroHandle, name: string, loop: boolean): void {
+    this.m.viroStartAnimation(node, name, loop);
+  }
+  pauseAnimation(node: ViroHandle): void {
+    this.m.viroPauseAnimation(node);
+  }
+  resumeAnimation(node: ViroHandle): void {
+    this.m.viroResumeAnimation(node);
+  }
+  stopAnimation(node: ViroHandle, jumpToEnd = false): void {
+    this.m.viroStopAnimation(node, jumpToEnd);
   }
 }
