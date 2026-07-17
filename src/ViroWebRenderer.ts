@@ -146,6 +146,11 @@ export class ViroWebRenderer {
     return this._scene;
   }
 
+  /** Backing-store size of the canvas in device pixels (for hit-test unprojection). */
+  get canvasSize(): { width: number; height: number } {
+    return { width: this.canvas.width, height: this.canvas.height };
+  }
+
   /** Register (or replace) event handlers for a node handle. */
   setNodeEventHandlers(handle: ViroHandle, handlers: ViroNodeEventHandlers): void {
     this.eventHandlers.set(handle, handlers);

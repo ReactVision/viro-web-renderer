@@ -53,6 +53,19 @@ export interface SlamEngine {
   posePz(): number;
   trackingQuality(): number;
   getStatus(): number;
+  // Planes (fetch then read by index; all in slam Z-up world space).
+  fetchPlanes(maxPlanes: number): number;
+  planeId(i: number): number;
+  planeCenterX(i: number): number;
+  planeCenterY(i: number): number;
+  planeCenterZ(i: number): number;
+  planeNormalX(i: number): number;
+  planeNormalY(i: number): number;
+  planeNormalZ(i: number): number;
+  planeExtentX(i: number): number;
+  planeExtentZ(i: number): number;
+  planeType(i: number): number;
+  planeConfidence(i: number): number;
   delete(): void;
 }
 
@@ -72,6 +85,45 @@ export enum SlamStatus {
   Initializing = 1,
   Running = 2,
   Lost = 3,
+}
+
+/** slam plane classification (SlamPlaneType in slam_c_api.h). */
+export enum SlamPlaneType {
+  HorizontalUpward = 0,
+  HorizontalDownward = 1,
+  Vertical = 2,
+}
+
+/** Viro plane alignment, matching ViroARPlaneAlignment in the bridge. */
+export type ArPlaneAlignment =
+  | "Horizontal"
+  | "HorizontalUpward"
+  | "HorizontalDownward"
+  | "Vertical";
+
+/**
+ * A detected plane, converted from slam (Z-up) to virocore (Y-up) world space.
+ * `rotation` (Euler degrees) orients local +Y to the plane normal, so children
+ * placed in the local XZ plane lie on the surface. width/height are the extents
+ * along the plane's local X/Z.
+ */
+export interface ArPlaneAnchor {
+  id: string;
+  center: [number, number, number];
+  normal: [number, number, number];
+  rotation: [number, number, number];
+  width: number;
+  height: number;
+  alignment: ArPlaneAlignment;
+  confidence: number;
+}
+
+/** A ray/plane hit, in virocore (Y-up) world space. */
+export interface ArHitResult {
+  anchorId: string;
+  position: [number, number, number];
+  normal: [number, number, number];
+  distance: number;
 }
 
 /** Pinhole intrinsics; if omitted they are derived from the capture resolution. */
@@ -132,8 +184,14 @@ export interface ViroArSessionOptions {
   tuning?: Partial<SlamTuning>;
   /** Draw the live camera feed behind the scene. Default true. */
   showCameraBackground?: boolean;
+  /** Detect planes and surface them via onAnchorsUpdated. Default false. */
+  detectPlanes?: boolean;
+  /** Max planes to fetch per update when detectPlanes is on. Default 10. */
+  maxPlanes?: number;
   /** Reported each frame with the tracking state and quality [0,1]. */
   onStatus?: (state: ViroTrackingState, quality: number) => void;
+  /** Called when the set of detected planes changes (added/removed/moved). */
+  onAnchorsUpdated?: (anchors: ArPlaneAnchor[]) => void;
   /** Called once if starting fails (permissions, no camera, slam load error). */
   onError?: (error: Error) => void;
 }
@@ -174,6 +232,63 @@ function quatRotateVec(q: Quat, v: readonly [number, number, number]): [number, 
   ];
 }
 
+type Vec3 = [number, number, number];
+
+function cross(a: readonly [number, number, number], b: readonly [number, number, number]): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+function dot(a: readonly [number, number, number], b: readonly [number, number, number]): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+function normalize(v: readonly [number, number, number]): Vec3 {
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+/** Quaternion [x,y,z,w] rotating unit vector `a` onto unit vector `b`. */
+function quatFromUnitVectors(a: Vec3, b: Vec3): [number, number, number, number] {
+  const d = dot(a, b);
+  if (d > 0.999999) return [0, 0, 0, 1];
+  if (d < -0.999999) {
+    // Antiparallel: rotate 180° about any axis perpendicular to a.
+    let axis = cross([1, 0, 0], a);
+    if (Math.hypot(axis[0], axis[1], axis[2]) < 1e-6) axis = cross([0, 0, 1], a);
+    const [x, y, z] = normalize(axis);
+    return [x, y, z, 0];
+  }
+  const c = cross(a, b);
+  const q: [number, number, number, number] = [c[0], c[1], c[2], 1 + d];
+  const len = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+  return [q[0] / len, q[1] / len, q[2] / len, q[3] / len];
+}
+
+/** Quaternion [x,y,z,w] → Euler degrees (XYZ order, matching VRONode). */
+function quatToEulerDeg(q: readonly [number, number, number, number]): Vec3 {
+  const [x, y, z, w] = q;
+  const rad = 180 / Math.PI;
+  // XYZ intrinsic.
+  const sinrCosp = 2 * (w * x + y * z);
+  const cosrCosp = 1 - 2 * (x * x + y * y);
+  const roll = Math.atan2(sinrCosp, cosrCosp);
+  const sinp = 2 * (w * y - z * x);
+  const pitch = Math.abs(sinp) >= 1 ? (Math.sign(sinp) * Math.PI) / 2 : Math.asin(sinp);
+  const sinyCosp = 2 * (w * z + x * y);
+  const cosyCosp = 1 - 2 * (y * y + z * z);
+  const yaw = Math.atan2(sinyCosp, cosyCosp);
+  return [roll * rad, pitch * rad, yaw * rad];
+}
+
+function slamPlaneAlignment(type: number): ArPlaneAlignment {
+  switch (type) {
+    case SlamPlaneType.HorizontalDownward:
+      return "HorizontalDownward";
+    case SlamPlaneType.Vertical:
+      return "Vertical";
+    default:
+      return "HorizontalUpward";
+  }
+}
+
 function slamStatusToTrackingState(status: number): ViroTrackingState {
   switch (status) {
     case SlamStatus.Running:
@@ -205,6 +320,13 @@ export class ViroArSession {
   private imuHandler: ((e: DeviceMotionEvent) => void) | null = null;
 
   private bgTexture = 0; // current camera-feed texture handle (0 = none)
+
+  // Latest camera pose in virocore (Y-up) world space, for hit-testing.
+  private lastCamPos: Vec3 = [0, 0, 0];
+  private lastCamQuat: [number, number, number, number] = [0, 0, 0, 1];
+  // Last emitted plane set (by id) for change detection.
+  private planeSnapshot = new Map<string, ArPlaneAnchor>();
+  private lastPlanes: ArPlaneAnchor[] = [];
 
   constructor(options: ViroArSessionOptions) {
     this.opts = options;
@@ -319,6 +441,8 @@ export class ViroArSession {
     this.module = null;
     this.canvas = null;
     this.ctx = null;
+    this.planeSnapshot.clear();
+    this.lastPlanes = [];
   }
 
   private async resolveSlamFactory(): Promise<SlamWasmFactory> {
@@ -399,10 +523,108 @@ export class ViroArSession {
     const [px, py, pz] = quatRotateVec(FRAME_Q, [engine.posePx(), engine.posePy(), engine.posePz()]);
     const [qx, qy, qz, qw] = quatMul(quatMul(FRAME_Q, slamQuat), CAM_FLIP);
     this.opts.sceneApi.arSetPose(qx, qy, qz, qw, px, py, pz, state);
+    this.lastCamPos = [px, py, pz];
+    this.lastCamQuat = [qx, qy, qz, qw];
+
+    if (this.opts.detectPlanes) {
+      this.emitPlanes();
+    }
 
     if (this.opts.showCameraBackground !== false) {
       this.updateCameraBackground(rgba, w, h);
     }
+  }
+
+  /**
+   * Fetch slam planes, convert to virocore (Y-up) space, and fire
+   * onAnchorsUpdated when the set changes (added/removed/moved beyond epsilon).
+   */
+  private emitPlanes(): void {
+    const engine = this.engine;
+    if (!engine) return;
+    const max = this.opts.maxPlanes ?? 10;
+    const count = engine.fetchPlanes(max);
+
+    const planes: ArPlaneAnchor[] = [];
+    for (let i = 0; i < count; i++) {
+      const center = quatRotateVec(FRAME_Q, [
+        engine.planeCenterX(i),
+        engine.planeCenterY(i),
+        engine.planeCenterZ(i),
+      ]);
+      const normal = normalize(
+        quatRotateVec(FRAME_Q, [engine.planeNormalX(i), engine.planeNormalY(i), engine.planeNormalZ(i)]),
+      );
+      const rotation = quatToEulerDeg(quatFromUnitVectors([0, 1, 0], normal));
+      planes.push({
+        id: String(engine.planeId(i)),
+        center,
+        normal,
+        rotation,
+        width: engine.planeExtentX(i),
+        height: engine.planeExtentZ(i),
+        alignment: slamPlaneAlignment(engine.planeType(i)),
+        confidence: engine.planeConfidence(i),
+      });
+    }
+
+    if (this.planesChanged(planes)) {
+      this.planeSnapshot = new Map(planes.map((p) => [p.id, p]));
+      this.lastPlanes = planes;
+      this.opts.onAnchorsUpdated?.(planes);
+    }
+  }
+
+  private planesChanged(planes: ArPlaneAnchor[]): boolean {
+    if (planes.length !== this.planeSnapshot.size) return true;
+    const eps = 0.02; // 2 cm / 2 cm extent
+    for (const p of planes) {
+      const prev = this.planeSnapshot.get(p.id);
+      if (!prev) return true;
+      if (
+        Math.abs(p.center[0] - prev.center[0]) > eps ||
+        Math.abs(p.center[1] - prev.center[1]) > eps ||
+        Math.abs(p.center[2] - prev.center[2]) > eps ||
+        Math.abs(p.width - prev.width) > eps ||
+        Math.abs(p.height - prev.height) > eps
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** The most recently emitted plane set. */
+  getPlanes(): ArPlaneAnchor[] {
+    return this.lastPlanes;
+  }
+
+  /**
+   * Cast a ray from the camera through a screen point and intersect the detected
+   * planes. Returns hits sorted nearest-first (virocore Y-up world space).
+   * viewport dims are in the same pixels as screenX/screenY (top-left origin).
+   */
+  hitTest(screenX: number, screenY: number, viewportW: number, viewportH: number): ArHitResult[] {
+    // Match VROARCameraWeb::getProjection: 60° vertical FOV, aspect from viewport.
+    const aspect = viewportH > 0 ? viewportW / viewportH : 1;
+    const tanV = Math.tan((30 * Math.PI) / 180);
+    const tanH = tanV * aspect;
+    const ndcX = (screenX / viewportW) * 2 - 1;
+    const ndcY = 1 - (screenY / viewportH) * 2;
+    const dirCam: Vec3 = [ndcX * tanH, ndcY * tanV, -1];
+    const dir = normalize(quatRotateVec(this.lastCamQuat, dirCam));
+    const origin = this.lastCamPos;
+
+    const hits: ArHitResult[] = [];
+    for (const p of this.lastPlanes) {
+      const denom = dot(dir, p.normal);
+      if (Math.abs(denom) < 1e-6) continue;
+      const t = dot([p.center[0] - origin[0], p.center[1] - origin[1], p.center[2] - origin[2]], p.normal) / denom;
+      if (t <= 0) continue;
+      const hit: Vec3 = [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
+      hits.push({ anchorId: p.id, position: hit, normal: p.normal, distance: t });
+    }
+    return hits.sort((a, b) => a.distance - b.distance);
   }
 
   /**

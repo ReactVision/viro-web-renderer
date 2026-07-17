@@ -27,7 +27,12 @@ export type {
   ViroNodeEventHandlers,
   ViroAnimationHandlers,
 } from "./sceneApi.js";
-export { ViroArSession, requestDeviceMotionPermission, SlamStatus } from "./arSession.js";
+export {
+  ViroArSession,
+  requestDeviceMotionPermission,
+  SlamStatus,
+  SlamPlaneType,
+} from "./arSession.js";
 export type {
   ViroArSessionOptions,
   SlamEngine,
@@ -35,6 +40,9 @@ export type {
   SlamWasmFactory,
   SlamIntrinsics,
   SlamTuning,
+  ArPlaneAnchor,
+  ArPlaneAlignment,
+  ArHitResult,
 } from "./arSession.js";
 export type {
   ViroWebModule,
