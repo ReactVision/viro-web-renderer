@@ -75,10 +75,79 @@ npm publish --access public
 `dist/` and `wasm/` are shipped (see `files` in `package.json`); both are
 git-ignored and regenerated from source.
 
-## Bundler notes
+## Bundler integration
 
-The Emscripten glue is imported dynamically and its `.wasm`/`.data` sidecars are
-resolved relative to the glue URL. Under a bundler you may need to emit `.wasm`
-and `.data` as assets and serve COOP/COEP-free (this build is single-threaded,
-so `SharedArrayBuffer` / cross-origin isolation is **not** required). Full
-Metro/webpack config lands with the Phase 2 bridge.
+Three things a consumer's bundler must handle to run the Viro web bridge:
+
+1. **Platform resolution** — resolve `.web.tsx`/`.web.ts` before the native files.
+2. **`react-native` → `react-native-web`** alias.
+3. **The WASM assets** — `viro-web.js` (glue), `viro-web.wasm`, `viro-web.data`
+   must be reachable at runtime. How you point the renderer at them depends on
+   the bundler (see `ViroWebRendererOptions`: `importGlue`, `assetBaseUrl`,
+   `locateFile`).
+
+**No cross-origin isolation needed.** This build is single-threaded (no pthreads),
+so `SharedArrayBuffer` and COOP/COEP headers are **not** required.
+
+### Loading the WASM assets
+
+The glue is imported dynamically; by default it self-resolves the sidecars
+relative to its own URL (works for plain ESM). Bundlers that rewrite
+`import.meta.url` need one of:
+
+- **`importGlue` + `locateFile`** — import each file with the bundler's asset
+  syntax and hand back the URLs. Best for Vite/webpack.
+- **`assetBaseUrl`** (or `globalThis.VIRO_WEB_ASSET_BASE`) — a directory URL
+  where the three files are served (e.g. copied into `public/` or a CDN).
+
+#### Vite (validated)
+
+```ts
+import glueUrl from "@reactvision/viro-web-renderer/wasm/viro-web.js?url";
+import wasmUrl from "@reactvision/viro-web-renderer/wasm/viro-web.wasm?url";
+import dataUrl from "@reactvision/viro-web-renderer/wasm/viro-web.data?url";
+
+const webRendererOptions = {
+  importGlue: () => import(/* @vite-ignore */ glueUrl),
+  locateFile: (p: string) =>
+    p.endsWith(".wasm") ? wasmUrl : p.endsWith(".data") ? dataUrl : p,
+};
+// vite.config: resolve.extensions = [".web.tsx", ".web.ts", ".tsx", ".ts", ...]
+//              resolve.alias = { "react-native": "react-native-web" }
+//              optimizeDeps.exclude = ["@reactvision/viro-web-renderer"]
+```
+
+Pass `webRendererOptions` to `Viro3DSceneNavigator` (web).
+
+#### webpack 5
+
+```js
+// webpack.config.js
+resolve: {
+  extensions: [".web.tsx", ".web.ts", ".web.js", ".tsx", ".ts", ".js"],
+  alias: { "react-native$": "react-native-web" },
+},
+module: {
+  rules: [
+    { test: /viro-web\.(wasm|data)$/, type: "asset/resource" },
+  ],
+},
+```
+```ts
+import glueUrl from "@reactvision/viro-web-renderer/wasm/viro-web.js";
+import wasmUrl from "@reactvision/viro-web-renderer/wasm/viro-web.wasm";
+import dataUrl from "@reactvision/viro-web-renderer/wasm/viro-web.data";
+// importGlue: () => import(/* webpackIgnore: true */ glueUrl); locateFile as above
+```
+
+#### Metro / Expo web
+
+```js
+// metro.config.js
+config.resolver.assetExts.push("wasm", "data");
+// react-native-web alias + .web resolution are Expo web defaults.
+```
+Then serve the three files from a known path (e.g. copy to the app's `public/`)
+and set `assetBaseUrl` to that directory. Metro's asset pipeline for arbitrary
+`import`ed binaries is less flexible than webpack/Vite, so the `assetBaseUrl` +
+`public/` approach is the most reliable there.
