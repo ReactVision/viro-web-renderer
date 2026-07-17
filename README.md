@@ -5,9 +5,10 @@ platform. This package ships the compiled `.wasm` module, its Emscripten glue,
 and a small typed loader / init API. It is consumed by the Viro web bridge
 (`react-native-web` layer) in Phase 2.
 
-> Status: **Phase 1 (productizing the renderer).** Initialization currently
-> builds a demo scene (a spinning cube). The declarative scene / component API
-> lands with the Phase 2 bridge.
+> Status: **Phase 3.** Ships the typed scene C API (`ViroSceneApi`) driven by the
+> Viro web bridge, plus `ViroArSession` for web AR (camera + 6-DoF pose + plane
+> detection via slam-wasm). A `viroBuildDemoCube()` smoke-test scene is still
+> available.
 
 ## Install
 
@@ -151,3 +152,36 @@ Then serve the three files from a known path (e.g. copy to the app's `public/`)
 and set `assetBaseUrl` to that directory. Metro's asset pipeline for arbitrary
 `import`ed binaries is less flexible than webpack/Vite, so the `assetBaseUrl` +
 `public/` approach is the most reliable there.
+
+## AR (`ViroArSession`)
+
+Web AR is driven by a second WASM module, [slam-wasm](../slam), which does the
+6-DoF tracking + plane detection. This package provides `ViroArSession`: it
+captures the camera + IMU, feeds slam, converts the pose from slam's Z-up/OpenCV
+frame to virocore's Y-up/GL frame, and injects it into the renderer via the AR
+scene API (`ViroSceneApi.arSet*`). Most apps use it indirectly through the Viro
+bridge's `ViroARSceneNavigator.web`; the low-level API is here for custom hosts.
+
+```ts
+import { ViroWebRenderer, ViroArSession } from "@reactvision/viro-web-renderer";
+
+const renderer = await ViroWebRenderer.create({ canvas });
+
+const session = new ViroArSession({
+  sceneApi: renderer.scene,
+  // slam-wasm factory. With the classic <script> build: () => globalThis.SlamModule
+  loadSlam: () => import("/slam_wasm.mjs"),
+  detectPlanes: true,
+  onStatus: (state, quality) => {/* 1 Unavailable / 2 Limited / 3 Normal */},
+  onAnchorsUpdated: (planes) => {/* ArPlaneAnchor[] in Y-up world space */},
+});
+
+await session.start();               // needs a user gesture (camera + iOS motion perm)
+const hits = session.hitTest(x, y, canvas.width, canvas.height); // ray-vs-plane
+session.stop();                      // releases camera + tears down slam
+```
+
+`requestDeviceMotionPermission()` is exported to request iOS Safari's DeviceMotion
+permission from a tap. The camera feed, pose tracking, and plane detection all
+require **HTTPS** and a device with an IMU. See
+[`viro/WEB_AR.md`](../viro/WEB_AR.md) for the full component-level guide.
