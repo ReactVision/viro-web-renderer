@@ -56,6 +56,16 @@ export enum ViroBlendMode {
   Screen = 5,
 }
 
+/** Easing for declarative animations (matches easingValue in VROSceneWeb.cpp). */
+export enum ViroEasing {
+  Linear = 0,
+  EaseIn = 1,
+  EaseOut = 2,
+  EaseInEaseOut = 3,
+  Bounce = 4,
+  PowerDecel = 5,
+}
+
 /** Model container format for loadModel (matches viroLoadModel in VROSceneWeb.cpp). */
 export enum ViroModelFormat {
   GLB = 0,
@@ -303,5 +313,19 @@ export class ViroSceneApi {
   }
   stopAnimation(node: ViroHandle, jumpToEnd = false): void {
     this.m.viroStopAnimation(node, jumpToEnd);
+  }
+
+  // --- Declarative animations (transform/opacity via transaction) ---
+  beginAnimation(
+    node: ViroHandle,
+    durationSeconds: number,
+    delaySeconds: number,
+    loop: boolean,
+    easing: ViroEasing,
+  ): void {
+    this.m.viroBeginAnimation(node, durationSeconds, delaySeconds, loop, easing);
+  }
+  commitAnimation(): void {
+    this.m.viroCommitAnimation();
   }
 }

@@ -113,6 +113,17 @@ export interface ViroWebModule {
   viroResumeAnimation(nodeHandle: number): void;
   viroStopAnimation(nodeHandle: number, jumpToEnd: boolean): void;
 
+  // Declarative animations (transform/opacity via transaction): wrap node
+  // property setters between begin/commit. easing: 0=Linear..5=PowerDecel.
+  viroBeginAnimation(
+    nodeHandle: number,
+    duration: number,
+    delay: number,
+    loop: boolean,
+    easing: number,
+  ): void;
+  viroCommitAnimation(): void;
+
   // Emscripten virtual filesystem (exported via EXPORTED_RUNTIME_METHODS=[...,FS]).
   FS: {
     writeFile(path: string, data: Uint8Array | string): void;
