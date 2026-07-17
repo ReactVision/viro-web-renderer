@@ -56,6 +56,13 @@ export enum ViroBlendMode {
   Screen = 5,
 }
 
+/** AR tracking state (mirrors VROARTrackingState in VROARCamera.h). */
+export enum ViroTrackingState {
+  Unavailable = 1,
+  Limited = 2,
+  Normal = 3,
+}
+
 /** Easing for declarative animations (matches easingValue in VROSceneWeb.cpp). */
 export enum ViroEasing {
   Linear = 0,
@@ -327,5 +334,28 @@ export class ViroSceneApi {
   }
   commitAnimation(): void {
     this.m.viroCommitAnimation();
+  }
+
+  // --- AR ---
+  initAR(): void {
+    this.m.viroInitAR();
+  }
+  arSetPose(
+    qx: number,
+    qy: number,
+    qz: number,
+    qw: number,
+    px: number,
+    py: number,
+    pz: number,
+    trackingState: ViroTrackingState,
+  ): void {
+    this.m.viroARSetPose(qx, qy, qz, qw, px, py, pz, trackingState);
+  }
+  arSetCameraBackground(texture: ViroHandle): void {
+    this.m.viroARSetCameraBackground(texture);
+  }
+  arSetCameraImageSize(width: number, height: number): void {
+    this.m.viroARSetCameraImageSize(width, height);
   }
 }

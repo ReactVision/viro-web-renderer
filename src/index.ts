@@ -19,6 +19,7 @@ export {
   ViroBlendMode,
   ViroModelFormat,
   ViroEasing,
+  ViroTrackingState,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type {
@@ -26,6 +27,15 @@ export type {
   ViroNodeEventHandlers,
   ViroAnimationHandlers,
 } from "./sceneApi.js";
+export { ViroArSession, requestDeviceMotionPermission, SlamStatus } from "./arSession.js";
+export type {
+  ViroArSessionOptions,
+  SlamEngine,
+  SlamWasmModule,
+  SlamWasmFactory,
+  SlamIntrinsics,
+  SlamTuning,
+} from "./arSession.js";
 export type {
   ViroWebModule,
   ViroWebModuleFactory,

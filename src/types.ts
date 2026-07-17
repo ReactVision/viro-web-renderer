@@ -124,6 +124,27 @@ export interface ViroWebModule {
   ): void;
   viroCommitAnimation(): void;
 
+  // --- AR (web). Pose/camera-feed are injected from JS running slam-wasm. ---
+  // Switch the scene into AR mode; drawFrame() then drives the camera from the pose.
+  viroInitAR(): void;
+  // Inject a pose already converted to virocore's Y-up/GL convention. Rotation as
+  // a quaternion (x,y,z,w); position in meters. trackingState: 1=Unavailable,
+  // 2=Limited, 3=Normal.
+  viroARSetPose(
+    qx: number,
+    qy: number,
+    qz: number,
+    qw: number,
+    px: number,
+    py: number,
+    pz: number,
+    trackingState: number,
+  ): void;
+  // Set the live camera-feed texture handle (from viroCreateTextureRGBA).
+  viroARSetCameraBackground(textureHandle: number): void;
+  // Report the camera image dimensions (used for projection).
+  viroARSetCameraImageSize(width: number, height: number): void;
+
   // Emscripten virtual filesystem (exported via EXPORTED_RUNTIME_METHODS=[...,FS]).
   FS: {
     writeFile(path: string, data: Uint8Array | string): void;
