@@ -183,5 +183,7 @@ session.stop();                      // releases camera + tears down slam
 
 `requestDeviceMotionPermission()` is exported to request iOS Safari's DeviceMotion
 permission from a tap. The camera feed, pose tracking, and plane detection all
-require **HTTPS** and a device with an IMU. See
-[`viro/WEB_AR.md`](../viro/WEB_AR.md) for the full component-level guide.
+require **HTTPS** and a device with an IMU. See the Viro web docs for the full
+guides: [Usage](../viro/docs/web/USAGE.md#ar),
+[Integration](../viro/docs/web/INTEGRATION.md#ar-setup),
+[Internals](../viro/docs/web/INTERNALS.md#the-ar-pipeline).
