@@ -107,6 +107,30 @@ export interface ViroWebModule {
   viroSetBackgroundCube(texture: number): void;
   viroSetBackgroundRotation(x: number, y: number, z: number): void;
 
+  // Particle emitter attached to a node. spawnShape: 0 Box, 1 Sphere, 2 Point.
+  viroCreateParticleEmitter(
+    node: number,
+    texture: number,
+    particleW: number,
+    particleH: number,
+    maxParticles: number,
+    emitRateMin: number,
+    emitRateMax: number,
+    lifetimeMin: number,
+    lifetimeMax: number,
+    spawnShape: number,
+    sp0: number,
+    sp1: number,
+    sp2: number,
+    velMinX: number,
+    velMinY: number,
+    velMinZ: number,
+    velMaxX: number,
+    velMaxY: number,
+    velMaxZ: number,
+  ): number;
+  viroSetParticleEmitterRun(node: number, run: boolean): void;
+
   // Events: register one callback; WASM invokes it as
   // (nodeHandle, eventAction, source, intArg, x, y, z).
   viroSetEventCallback(

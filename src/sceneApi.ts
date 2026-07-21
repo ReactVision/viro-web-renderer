@@ -81,6 +81,13 @@ export enum ViroTextClipMode {
   None = 1,
 }
 
+/** Particle spawn-volume shape (mirrors VROParticleSpawnVolume::Shape). */
+export enum ViroParticleSpawnShape {
+  Box = 0,
+  Sphere = 1,
+  Point = 2,
+}
+
 /** AR tracking state (mirrors VROARTrackingState in VROARCamera.h). */
 export enum ViroTrackingState {
   Unavailable = 1,
@@ -362,6 +369,53 @@ export class ViroSceneApi {
   }
   setBackgroundRotation(x: number, y: number, z: number): void {
     this.m.viroSetBackgroundRotation(x, y, z);
+  }
+
+  // --- Particles ---
+  createParticleEmitter(
+    node: ViroHandle,
+    texture: ViroHandle,
+    config: {
+      particleWidth?: number;
+      particleHeight?: number;
+      maxParticles?: number;
+      emissionRatePerSecond?: [number, number];
+      particleLifetime?: [number, number];
+      spawnShape?: ViroParticleSpawnShape;
+      spawnParams?: [number, number, number];
+      velocityMin?: [number, number, number];
+      velocityMax?: [number, number, number];
+    },
+  ): void {
+    const [erMin, erMax] = config.emissionRatePerSecond ?? [10, 10];
+    const [ltMin, ltMax] = config.particleLifetime ?? [2000, 2000];
+    const [sp0, sp1, sp2] = config.spawnParams ?? [0, 0, 0];
+    const [vnx, vny, vnz] = config.velocityMin ?? [0, 0, 0];
+    const [vxx, vxy, vxz] = config.velocityMax ?? [0, 0, 0];
+    this.m.viroCreateParticleEmitter(
+      node,
+      texture,
+      config.particleWidth ?? 0.1,
+      config.particleHeight ?? 0.1,
+      config.maxParticles ?? 500,
+      erMin,
+      erMax,
+      ltMin,
+      ltMax,
+      config.spawnShape ?? ViroParticleSpawnShape.Point,
+      sp0,
+      sp1,
+      sp2,
+      vnx,
+      vny,
+      vnz,
+      vxx,
+      vxy,
+      vxz,
+    );
+  }
+  setParticleEmitterRun(node: ViroHandle, run: boolean): void {
+    this.m.viroSetParticleEmitterRun(node, run);
   }
 
   // --- Lights ---
