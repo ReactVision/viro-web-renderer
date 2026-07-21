@@ -371,6 +371,20 @@ export class ViroSceneApi {
     this.m.viroSetBackgroundRotation(x, y, z);
   }
 
+  // --- Portals ---
+  createPortalScene(): ViroHandle {
+    return this.m.viroCreatePortalScene();
+  }
+  createPortalFrame(): ViroHandle {
+    return this.m.viroCreatePortalFrame();
+  }
+  setPortalEntrance(portalScene: ViroHandle, frame: ViroHandle): void {
+    this.m.viroSetPortalEntrance(portalScene, frame);
+  }
+  setPortalPassable(portalScene: ViroHandle, passable: boolean): void {
+    this.m.viroSetPortalPassable(portalScene, passable);
+  }
+
   // --- Particles ---
   createParticleEmitter(
     node: ViroHandle,

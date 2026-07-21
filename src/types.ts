@@ -108,6 +108,12 @@ export interface ViroWebModule {
   viroSetBackgroundRotation(x: number, y: number, z: number): void;
 
   // Particle emitter attached to a node. spawnShape: 0 Box, 1 Sphere, 2 Point.
+  // Portals: a portal scene (VROPortal) + entrance frame (VROPortalFrame).
+  viroCreatePortalScene(): number;
+  viroCreatePortalFrame(): number;
+  viroSetPortalEntrance(portalScene: number, frame: number): void;
+  viroSetPortalPassable(portalScene: number, passable: boolean): void;
+
   viroCreateParticleEmitter(
     node: number,
     texture: number,
