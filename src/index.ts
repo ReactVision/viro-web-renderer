@@ -20,6 +20,10 @@ export {
   ViroModelFormat,
   ViroEasing,
   ViroTrackingState,
+  ViroTextHorizontalAlignment,
+  ViroTextVerticalAlignment,
+  ViroLineBreakMode,
+  ViroTextClipMode,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type {

@@ -56,6 +56,31 @@ export enum ViroBlendMode {
   Screen = 5,
 }
 
+/** Text horizontal alignment (mirrors VROTextHorizontalAlignment). */
+export enum ViroTextHorizontalAlignment {
+  Left = 0,
+  Right = 1,
+  Center = 2,
+}
+/** Text vertical alignment (mirrors VROTextVerticalAlignment). */
+export enum ViroTextVerticalAlignment {
+  Top = 0,
+  Bottom = 1,
+  Center = 2,
+}
+/** Line break mode (mirrors VROLineBreakMode). */
+export enum ViroLineBreakMode {
+  WordWrap = 0,
+  CharWrap = 1,
+  Justify = 2,
+  None = 3,
+}
+/** Text clip mode (mirrors VROTextClipMode). */
+export enum ViroTextClipMode {
+  ClipToBounds = 0,
+  None = 1,
+}
+
 /** AR tracking state (mirrors VROARTrackingState in VROARCamera.h). */
 export enum ViroTrackingState {
   Unavailable = 1,
@@ -177,6 +202,34 @@ export class ViroSceneApi {
   }
   createSurface(width: number, height: number): ViroHandle {
     return this.m.viroCreateSurface(width, height);
+  }
+  createText(
+    text: string,
+    width: number,
+    height: number,
+    fontSize: number,
+    hAlign: ViroTextHorizontalAlignment,
+    vAlign: ViroTextVerticalAlignment,
+    lineBreak: ViroLineBreakMode,
+    clipMode: ViroTextClipMode,
+    maxLines: number,
+    color: { r: number; g: number; b: number; a: number },
+  ): ViroHandle {
+    return this.m.viroCreateText(
+      text,
+      width,
+      height,
+      fontSize,
+      hAlign,
+      vAlign,
+      lineBreak,
+      clipMode,
+      maxLines,
+      color.r,
+      color.g,
+      color.b,
+      color.a,
+    );
   }
   setGeometryMaterial(geometry: ViroHandle, material: ViroHandle): void {
     this.m.viroSetGeometryMaterial(geometry, material);

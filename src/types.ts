@@ -38,6 +38,21 @@ export interface ViroWebModule {
   viroCreateBox(width: number, height: number, length: number): number;
   viroCreateSphere(radius: number): number;
   viroCreateSurface(width: number, height: number): number;
+  viroCreateText(
+    text: string,
+    width: number,
+    height: number,
+    fontSize: number,
+    hAlign: number,
+    vAlign: number,
+    lineBreak: number,
+    clipMode: number,
+    maxLines: number,
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+  ): number;
   viroSetGeometryMaterial(geometry: number, material: number): void;
   viroDestroyGeometry(geometry: number): void;
 
