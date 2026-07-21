@@ -102,6 +102,10 @@ export interface ViroWebModule {
     width: number,
     height: number,
   ): number;
+  // IBL: load a radiance .hdr (written to the FS) → texture; apply to the scene.
+  viroLoadRadianceHDRTexture(path: string): number;
+  viroSetLightingEnvironment(texture: number): void;
+
   // Scene background: textured sphere (equirect 360) / cube (skybox) / rotation.
   viroSetBackgroundSphere(texture: number): void;
   viroSetBackgroundCube(texture: number): void;

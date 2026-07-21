@@ -371,6 +371,16 @@ export class ViroSceneApi {
     this.m.viroSetBackgroundRotation(x, y, z);
   }
 
+  // --- Lighting environment (IBL) ---
+  /** Load a radiance .hdr already written to the FS at `path` → texture handle. */
+  loadRadianceHDRTexture(path: string): ViroHandle {
+    return this.m.viroLoadRadianceHDRTexture(path);
+  }
+  /** Apply an IBL environment texture (0 clears it). */
+  setLightingEnvironment(texture: ViroHandle): void {
+    this.m.viroSetLightingEnvironment(texture);
+  }
+
   // --- Portals ---
   createPortalScene(): ViroHandle {
     return this.m.viroCreatePortalScene();

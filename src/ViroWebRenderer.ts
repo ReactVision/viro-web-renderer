@@ -16,6 +16,7 @@ const MODEL_EXT: Record<ViroModelFormat, string> = {
 };
 
 let selectorCounter = 0;
+let lightingEnvCounter = 0;
 
 function resolveCanvas(canvas: HTMLCanvasElement | string): HTMLCanvasElement {
   if (typeof canvas === "string") {
@@ -139,6 +140,25 @@ export class ViroWebRenderer {
       this.modelLoadResolvers.set(nodeHandle, resolve);
       this.module.viroLoadModel(nodeHandle, path, format);
     });
+  }
+
+  /**
+   * Load a radiance .hdr from a URL and apply it as the scene's IBL lighting
+   * environment. Fetches the bytes, writes them to the WASM FS, then loads +
+   * applies via the C API. Returns the texture handle (0 on failure).
+   */
+  async loadLightingEnvironment(url: string): Promise<ViroHandle> {
+    const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    const path = `/viro_env_${lightingEnvCounter++}.hdr`;
+    this.module.FS.writeFile(path, bytes);
+    const handle = this._scene.loadRadianceHDRTexture(path);
+    if (handle) this._scene.setLightingEnvironment(handle);
+    return handle;
+  }
+
+  /** Clear the scene's IBL lighting environment. */
+  clearLightingEnvironment(): void {
+    this._scene.setLightingEnvironment(0);
   }
 
   /** Typed scene-graph API the bridge reconciler drives to build/update the scene. */
