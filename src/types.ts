@@ -81,6 +81,21 @@ export interface ViroWebModule {
   viroSetTextureFilter(texture: number, min: number, mag: number, mip: number): void;
   viroSetMaterialTexture(material: number, channel: number, texture: number): void;
   viroDestroyTexture(texture: number): void;
+  // Cube texture from six RGBA8 faces (+X,-X,+Y,-Y,+Z,-Z). For skyboxes.
+  viroCreateTextureCubeRGBA(
+    px: Uint8Array | number[],
+    nx: Uint8Array | number[],
+    py: Uint8Array | number[],
+    ny: Uint8Array | number[],
+    pz: Uint8Array | number[],
+    nz: Uint8Array | number[],
+    width: number,
+    height: number,
+  ): number;
+  // Scene background: textured sphere (equirect 360) / cube (skybox) / rotation.
+  viroSetBackgroundSphere(texture: number): void;
+  viroSetBackgroundCube(texture: number): void;
+  viroSetBackgroundRotation(x: number, y: number, z: number): void;
 
   // Events: register one callback; WASM invokes it as
   // (nodeHandle, eventAction, source, intArg, x, y, z).

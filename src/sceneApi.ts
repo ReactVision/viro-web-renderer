@@ -312,6 +312,41 @@ export class ViroSceneApi {
     this.m.viroDestroyTexture(texture);
   }
 
+  // --- Background (skybox / 360) ---
+  /** Six RGBA8 faces in +X,-X,+Y,-Y,+Z,-Z order, each width*height*4 bytes. */
+  createTextureCubeRGBA(
+    faces: {
+      px: Uint8Array | number[];
+      nx: Uint8Array | number[];
+      py: Uint8Array | number[];
+      ny: Uint8Array | number[];
+      pz: Uint8Array | number[];
+      nz: Uint8Array | number[];
+    },
+    width: number,
+    height: number,
+  ): ViroHandle {
+    return this.m.viroCreateTextureCubeRGBA(
+      faces.px,
+      faces.nx,
+      faces.py,
+      faces.ny,
+      faces.pz,
+      faces.nz,
+      width,
+      height,
+    );
+  }
+  setBackgroundSphere(texture: ViroHandle): void {
+    this.m.viroSetBackgroundSphere(texture);
+  }
+  setBackgroundCube(texture: ViroHandle): void {
+    this.m.viroSetBackgroundCube(texture);
+  }
+  setBackgroundRotation(x: number, y: number, z: number): void {
+    this.m.viroSetBackgroundRotation(x, y, z);
+  }
+
   // --- Lights ---
   createLight(type: ViroLightType): ViroHandle {
     return this.m.viroCreateLight(type);
