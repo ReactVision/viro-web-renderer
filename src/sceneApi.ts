@@ -239,6 +239,15 @@ export class ViroSceneApi {
   createPolygon(points: Float32Array | number[]): ViroHandle {
     return this.m.viroCreatePolygon(points);
   }
+  /** Custom mesh. normals/texcoords may be empty; indices are triangles. */
+  createGeometry(
+    vertices: Float32Array | number[],
+    normals: Float32Array | number[],
+    texcoords: Float32Array | number[],
+    indices: Uint32Array | number[],
+  ): ViroHandle {
+    return this.m.viroCreateGeometry(vertices, normals, texcoords, indices);
+  }
   setGeometryMaterial(geometry: ViroHandle, material: ViroHandle): void {
     this.m.viroSetGeometryMaterial(geometry, material);
   }

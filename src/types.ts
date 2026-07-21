@@ -56,6 +56,13 @@ export interface ViroWebModule {
   // Flat [x,y,z, …] point list.
   viroCreatePolyline(points: Float32Array | number[], thickness: number): number;
   viroCreatePolygon(points: Float32Array | number[]): number;
+  // Custom mesh: flat vertex/normal [x,y,z,…], texcoord [u,v,…], triangle indices.
+  viroCreateGeometry(
+    vertices: Float32Array | number[],
+    normals: Float32Array | number[],
+    texcoords: Float32Array | number[],
+    indices: Uint32Array | number[],
+  ): number;
   viroSetGeometryMaterial(geometry: number, material: number): void;
   viroDestroyGeometry(geometry: number): void;
 
