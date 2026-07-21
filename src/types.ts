@@ -53,6 +53,9 @@ export interface ViroWebModule {
     b: number,
     a: number,
   ): number;
+  // Flat [x,y,z, …] point list.
+  viroCreatePolyline(points: Float32Array | number[], thickness: number): number;
+  viroCreatePolygon(points: Float32Array | number[]): number;
   viroSetGeometryMaterial(geometry: number, material: number): void;
   viroDestroyGeometry(geometry: number): void;
 

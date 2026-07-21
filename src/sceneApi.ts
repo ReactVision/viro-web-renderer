@@ -231,6 +231,14 @@ export class ViroSceneApi {
       color.a,
     );
   }
+  /** points: flat [x,y,z, …]. */
+  createPolyline(points: Float32Array | number[], thickness: number): ViroHandle {
+    return this.m.viroCreatePolyline(points, thickness);
+  }
+  /** points: flat [x,y,z, …] perimeter. */
+  createPolygon(points: Float32Array | number[]): ViroHandle {
+    return this.m.viroCreatePolygon(points);
+  }
   setGeometryMaterial(geometry: ViroHandle, material: ViroHandle): void {
     this.m.viroSetGeometryMaterial(geometry, material);
   }
