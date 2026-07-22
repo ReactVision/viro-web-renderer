@@ -186,6 +186,12 @@ export interface ViroArSessionOptions {
   showCameraBackground?: boolean;
   /** Detect planes and surface them via onAnchorsUpdated. Default false. */
   detectPlanes?: boolean;
+  /**
+   * Render the scene even while tracking is Limited/Unavailable (forces Normal
+   * into the renderer). For desktop dev/preview where there's no IMU so slam
+   * never converges. Real tracking state is still reported via onStatus.
+   */
+  renderWhileLimited?: boolean;
   /** Max planes to fetch per update when detectPlanes is on. Default 10. */
   maxPlanes?: number;
   /** Reported each frame with the tracking state and quality [0,1]. */
@@ -518,11 +524,19 @@ export class ViroArSession {
     const state = slamStatusToTrackingState(status);
     this.opts.onStatus?.(state, engine.trackingQuality());
 
+    // The renderer only draws the scene when tracking is Normal. Without an IMU
+    // (desktop) slam never leaves Limited, so `renderWhileLimited` forces Normal
+    // into the renderer (real state still goes to onStatus) — a dev/preview aid.
+    const injectedState =
+      this.opts.renderWhileLimited && state !== ViroTrackingState.Normal
+        ? ViroTrackingState.Normal
+        : state;
+
     // Convert pose (Z-up/OpenCV) → virocore (Y-up/GL) and inject.
     const slamQuat: Quat = [engine.poseQx(), engine.poseQy(), engine.poseQz(), engine.poseQw()];
     const [px, py, pz] = quatRotateVec(FRAME_Q, [engine.posePx(), engine.posePy(), engine.posePz()]);
     const [qx, qy, qz, qw] = quatMul(quatMul(FRAME_Q, slamQuat), CAM_FLIP);
-    this.opts.sceneApi.arSetPose(qx, qy, qz, qw, px, py, pz, state);
+    this.opts.sceneApi.arSetPose(qx, qy, qz, qw, px, py, pz, injectedState);
     this.lastCamPos = [px, py, pz];
     this.lastCamQuat = [qx, qy, qz, qw];
 
