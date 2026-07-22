@@ -363,6 +363,20 @@ export class ViroArSession {
       video.playsInline = true;
       video.muted = true;
       video.srcObject = this.stream;
+      // Safari (and some mobile browsers) won't decode/paint a detached <video>,
+      // so drawImage() would yield black frames. Attach it hidden to the DOM.
+      video.setAttribute("aria-hidden", "true");
+      Object.assign(video.style, {
+        position: "fixed",
+        top: "0",
+        left: "0",
+        width: "1px",
+        height: "1px",
+        opacity: "0",
+        pointerEvents: "none",
+        zIndex: "-1",
+      } as Partial<CSSStyleDeclaration>);
+      document.body.appendChild(video);
       await video.play();
       this.video = video;
 
@@ -428,7 +442,9 @@ export class ViroArSession {
       this.stream = null;
     }
     if (this.video) {
+      this.video.pause();
       this.video.srcObject = null;
+      this.video.remove();
       this.video = null;
     }
     if (this.bgTexture) {
