@@ -326,7 +326,6 @@ export class ViroArSession {
   private imuHandler: ((e: DeviceMotionEvent) => void) | null = null;
 
   private bgTexture = 0; // current camera-feed texture handle (0 = none)
-  private diagLogged = false; // one-time camera-feed diagnostic
 
   // Latest camera pose in virocore (Y-up) world space, for hit-testing.
   private lastCamPos: Vec3 = [0, 0, 0];
@@ -523,18 +522,6 @@ export class ViroArSession {
     ctx.drawImage(video, 0, 0, w, h);
     const rgba = ctx.getImageData(0, 0, w, h).data;
 
-    // One-time diagnostic: is the video actually producing pixels?
-    if (!this.diagLogged) {
-      this.diagLogged = true;
-      let nonZero = 0;
-      for (let i = 0; i < Math.min(rgba.length, 40000); i++) if (rgba[i] !== 0) nonZero++;
-      // eslint-disable-next-line no-console
-      console.log(
-        `[ar-diag] video ${video.videoWidth}x${video.videoHeight}, canvas ${w}x${h}, ` +
-          `px0=[${rgba[0]},${rgba[1]},${rgba[2]}], nonZeroInFirst40k=${nonZero}`,
-      );
-    }
-
     // RGBA → grayscale (Rec.601 integer weights), row-major top-left origin.
     const gray = new Uint8Array(w * h);
     for (let i = 0; i < gray.length; i++) {
@@ -677,19 +664,11 @@ export class ViroArSession {
    * would avoid the churn.
    */
   private updateCameraBackground(rgba: Uint8ClampedArray, w: number, h: number): void {
-    const flipped = new Uint8Array(w * h * 4);
-    const rowBytes = w * 4;
-    for (let y = 0; y < h; y++) {
-      const src = y * rowBytes;
-      const dst = (h - 1 - y) * rowBytes;
-      flipped.set(rgba.subarray(src, src + rowBytes), dst);
-    }
-    const tex = this.opts.sceneApi.createTextureRGBA(flipped, w, h, true);
+    // Upload rows as-is (top-first), matching ViroImage's orientation — the
+    // texture/surface pipeline already samples correctly, so an extra flip here
+    // would render the feed upside down.
+    const tex = this.opts.sceneApi.createTextureRGBA(new Uint8Array(rgba), w, h, true);
     this.opts.sceneApi.arSetCameraBackground(tex);
-    if (!this.bgTexture) {
-      // eslint-disable-next-line no-console
-      console.log(`[ar-diag] first camera bg texture handle=${tex} (${w}x${h})`);
-    }
     if (this.bgTexture) {
       this.opts.sceneApi.destroyTexture(this.bgTexture);
     }
