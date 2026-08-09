@@ -620,6 +620,16 @@ export class ViroArSession {
       this.video = video;
       this.canvas = canvas;
       this.ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+      // The same two calls the live path makes, and for the same reason: the AR
+      // subsystem has to be up before a pose lands, and the camera-background
+      // pipeline sizes itself from the image dimensions. Without them the
+      // background texture is uploaded into a pipeline that is not expecting
+      // one, and the scene composites over black — which looks like a video
+      // decoding problem and is not.
+      this.opts.sceneApi.initAR();
+      this.opts.sceneApi.arSetCameraImageSize(canvas.width, canvas.height);
+
       this.running = true;
       this.opts.onStatus?.(ViroTrackingState.Normal, 1);
     } catch (e) {

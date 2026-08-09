@@ -217,6 +217,11 @@ Three things worth knowing:
   is usually Z-up/OpenCV; the conversion the live path applies is `FRAME_Q` and
   `CAM_FLIP` in `arSession.ts`. Applying half of it produces a world that is
   almost right, which is the kind of bug that survives review.
+- **The AR subsystem is initialised the same way the live path does it**
+  (`initAR` + `arSetCameraImageSize`). Skipping either uploads the camera
+  background into a pipeline that is not expecting one and the scene composites
+  over black — a symptom that points at video decoding, which is not where it
+  is.
 - **`renderPlaybackFrame` awaits the decoder** before returning, so a caller can
   screenshot immediately after without racing it. A frame with
   `tracked: false` reports `Limited`, which hides the scene and leaves the
