@@ -181,6 +181,48 @@ const hits = session.hitTest(x, y, canvas.width, canvas.height); // ray-vs-plane
 session.stop();                      // releases camera + tears down slam
 ```
 
+### Replaying a recording (`playback`)
+
+`ViroArSession` can replay a recorded session instead of tracking a live one:
+frames come from a video, poses from an array, and the caller steps one frame at
+a time. The camera, the tracking engine and the IMU listener are all bypassed —
+everything downstream is untouched, so a scene composited this way is composited
+exactly as it would be on a device.
+
+```ts
+const session = new ViroArSession({
+  sceneApi: renderer.scene,
+  playback: {
+    videoUrl: "/recording/video.mp4",
+    frames: [{ t: 0.0, q: [0, 0, 0, 1], p: [0, 0, 0], tracked: true }, /* ... */],
+    planes: /* optional, per frame, already in Y-up world space */ undefined,
+  },
+});
+await session.start();
+for (let i = 0; i < session.playbackFrameCount; i++) {
+  await session.renderPlaybackFrame(i);   // resolves once that frame is decoded
+  // ...capture the canvas here
+}
+session.stop();
+```
+
+Three things worth knowing:
+
+- **The poses are computed offline**, not re-tracked here — in practice by
+  tinyvio's replay tool over the recording's video and IMU. That keeps this
+  deterministic and quick, and keeps two questions apart: whether tracking held
+  is answered by the analysis that produced the poses, and this only answers
+  what the scene looks like on top of it.
+- **They must already be in virocore space** (Y-up/GL). A tracker's own frame
+  is usually Z-up/OpenCV; the conversion the live path applies is `FRAME_Q` and
+  `CAM_FLIP` in `arSession.ts`. Applying half of it produces a world that is
+  almost right, which is the kind of bug that survives review.
+- **`renderPlaybackFrame` awaits the decoder** before returning, so a caller can
+  screenshot immediately after without racing it. A frame with
+  `tracked: false` reports `Limited`, which hides the scene and leaves the
+  camera feed alone — what a device does, and what an honest preview should
+  show rather than drawing content against a pose that does not exist.
+
 `requestDeviceMotionPermission()` is exported to request iOS Safari's DeviceMotion
 permission from a tap. The camera feed, pose tracking, and plane detection all
 require **HTTPS** and a device with an IMU. See the Viro web docs for the full

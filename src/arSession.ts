@@ -38,6 +38,10 @@ export interface SlamEngine {
     lostThreshold: number,
     lostRecovery: number,
     lostGrace: number,
+    qImuCamX: number,
+    qImuCamY: number,
+    qImuCamZ: number,
+    qImuCamW: number,
   ): void;
   start(): void;
   stop(): void;
@@ -200,6 +204,44 @@ export interface ViroArSessionOptions {
   onAnchorsUpdated?: (anchors: ArPlaneAnchor[]) => void;
   /** Called once if starting fails (permissions, no camera, slam load error). */
   onError?: (error: Error) => void;
+  /**
+   * Replay a recorded session instead of tracking a live one.
+   *
+   * When set, the camera and the tracking engine are both bypassed: frames come
+   * from the supplied video and poses from the supplied array, stepped one at a
+   * time by the caller rather than by requestAnimationFrame. Everything
+   * downstream is unchanged -- the same arSetPose and the same camera-background
+   * upload the live path uses -- so a scene composited this way is composited
+   * exactly as it would be on a device.
+   *
+   * The poses are computed offline (tinyvio's replay tool over the recording's
+   * video and IMU) rather than re-tracked here. That keeps this deterministic
+   * and quick, and keeps two questions apart: whether tracking held is answered
+   * by the analysis that produced these poses, and this only answers what the
+   * scene looks like on top of it.
+   */
+  playback?: ArPlaybackSource;
+}
+
+/** One replayed frame: when it was taken, and where the camera was. */
+export interface ArPlaybackFrame {
+  /** Seconds from the start of the recording. */
+  t: number;
+  /** Camera orientation, virocore (Y-up/GL) space, [x, y, z, w]. */
+  q: readonly [number, number, number, number];
+  /** Camera position, virocore (Y-up/GL) space. */
+  p: readonly [number, number, number];
+  /** False on frames the tracker did not hold; the scene is hidden on those. */
+  tracked?: boolean;
+}
+
+export interface ArPlaybackSource {
+  /** The recording, as anything an HTMLVideoElement can play. */
+  videoUrl: string;
+  /** One entry per frame, in order. */
+  frames: ArPlaybackFrame[];
+  /** Optional plane anchors per frame, already in virocore space. */
+  planes?: ArPlaneAnchor[][];
 }
 
 // --- Axis conversion (slam Z-up/OpenCV → virocore Y-up/GL), ported from the
@@ -326,6 +368,7 @@ export class ViroArSession {
   private imuHandler: ((e: DeviceMotionEvent) => void) | null = null;
 
   private bgTexture = 0; // current camera-feed texture handle (0 = none)
+  private playbackIndex = -1;
 
   // Latest camera pose in virocore (Y-up) world space, for hit-testing.
   private lastCamPos: Vec3 = [0, 0, 0];
@@ -345,6 +388,10 @@ export class ViroArSession {
    * from a user gesture; see ViroARSceneNavigator.
    */
   async start(): Promise<void> {
+    if (this.opts.playback) {
+      await this.startPlayback(this.opts.playback);
+      return;
+    }
     try {
       const factory = await this.resolveSlamFactory();
       const module = await factory();
@@ -405,6 +452,13 @@ export class ViroArSession {
         this.tuning.lostThreshold,
         this.tuning.lostRecovery,
         this.tuning.lostGrace,
+        // camera-to-IMU-frame rotation (x,y,z,w) -- identity for now. TODO:
+        // derive from screen.orientation/device orientation once that's wired
+        // up; identity only matches raw sensor readings on one orientation.
+        0,
+        0,
+        0,
+        1,
       );
       this.engine.start();
 
@@ -444,6 +498,10 @@ export class ViroArSession {
     if (this.video) {
       this.video.pause();
       this.video.srcObject = null;
+      // Playback loads through src rather than srcObject; clearing it releases
+      // the decoded recording instead of leaving it held by a detached element.
+      this.video.removeAttribute("src");
+      this.video.load();
       this.video.remove();
       this.video = null;
     }
@@ -476,9 +534,31 @@ export class ViroArSession {
 
   private resolveIntrinsics(width: number, height: number): SlamIntrinsics {
     if (this.opts.intrinsics) return this.opts.intrinsics;
-    // No calibration: assume a ~60° horizontal FOV pinhole centered on the image.
-    // Good enough to bootstrap tracking; refine with a real calibration later.
-    const f = 0.9 * width;
+
+    // No calibration, so this is an assumption — but an aspect-aware one, which
+    // the previous `0.9 * width` was not.
+    //
+    // That form gives the same focal in pixels for a 640x480 frame and a 480x853
+    // one, and a single camera cannot have both: getUserMedia crops the sensor to
+    // whatever aspect was asked for, and cropping changes the field of view
+    // without changing the focal length. What survives a crop is the focal per
+    // pixel along the axis the crop *kept*, which for any aspect more elongated
+    // than the sensor's is the long axis of the delivered frame.
+    //
+    // The constant is measured rather than assumed. A SensorRecorder capture from
+    // an iPhone rear wide camera reports fx = fy = 1357.41 px on a 1920x1440
+    // frame, so f = 0.707 * (long axis). The old value implied a 58 degree
+    // horizontal field of view where that camera has 70.6, which made the focal
+    // 27% too long on the documented 640x480 default — and a focal that is wrong
+    // warps triangulation in a way that shows up as reconstructed camera height
+    // drifting, which reads as content floating rather than as a calibration bug.
+    //
+    // Still only a default. Measured across three recordings from one phone the
+    // best-fitting focal varied by a factor of 1.6, which suggests the browser
+    // does not always hand over the same crop. Pass `intrinsics` when you know
+    // them; this only makes the fallback less wrong.
+    const SENSOR_FOCAL_PER_LONG_AXIS_PX = 0.707;
+    const f = SENSOR_FOCAL_PER_LONG_AXIS_PX * Math.max(width, height);
     return { fx: f, fy: f, cx: width / 2, cy: height / 2 };
   }
 
@@ -491,19 +571,117 @@ export class ViroArSession {
       if (!a || !r) return;
       const ts = performance.now() / 1000;
       const deg = Math.PI / 180;
-      // DeviceMotion rotationRate: alpha=Z, beta=X, gamma=Y (deg/s) → gx,gy,gz.
-      this.engine.feedImu(
-        ts,
-        a.x ?? 0,
-        a.y ?? 0,
-        a.z ?? 0,
-        (r.beta ?? 0) * deg,
-        (r.gamma ?? 0) * deg,
-        (r.alpha ?? 0) * deg,
-      );
+      // DeviceMotion's raw rotationRate (alpha=Z, beta=X, gamma=Y) needs a
+      // parity flip on gx (not just the direct relabel below) to match the
+      // engine's expected handedness -- confirmed against two real captures
+      // with independent ground truth (CoreMotion): portrait improved
+      // 12.27deg->10.30deg (real: 10.74deg) and landscape 20.88deg->11.76deg
+      // (real: 11.80deg) with the SAME unconditional flip. This is NOT an
+      // orientation-dependent correction (tried gating it on landscape via
+      // both screen.orientation.angle and viewport dimensions; the underlying
+      // bug turned out to reproduce in portrait too) -- always apply it.
+      const gx = -(r.beta ?? 0) * deg;
+      const gy = (r.gamma ?? 0) * deg;
+      const gz = (r.alpha ?? 0) * deg;
+      this.engine.feedImu(ts, a.x ?? 0, a.y ?? 0, a.z ?? 0, gx, gy, gz);
     };
     window.addEventListener("devicemotion", handler);
     this.imuHandler = handler;
+  }
+
+  /**
+   * Boot the replay path: a hidden <video> over the recording, a canvas to read
+   * it back through, and nothing else. No getUserMedia, no engine, no IMU
+   * listener, no rAF -- the caller drives with renderPlaybackFrame().
+   */
+  private async startPlayback(src: ArPlaybackSource): Promise<void> {
+    try {
+      const video = document.createElement("video");
+      video.playsInline = true;
+      video.muted = true;
+      video.preload = "auto";
+      video.src = src.videoUrl;
+      video.setAttribute("aria-hidden", "true");
+      // Same reason as the live path: a detached <video> paints black in some
+      // browsers, so it is attached and hidden rather than kept out of the DOM.
+      Object.assign(video.style, {
+        position: "fixed", top: "0", left: "0", width: "1px", height: "1px",
+        opacity: "0", pointerEvents: "none",
+      });
+      document.body.appendChild(video);
+      await new Promise<void>((resolve, reject) => {
+        video.onloadeddata = () => resolve();
+        video.onerror = () => reject(new Error(`could not load ${src.videoUrl}`));
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      this.video = video;
+      this.canvas = canvas;
+      this.ctx = canvas.getContext("2d", { willReadFrequently: true });
+      this.running = true;
+      this.opts.onStatus?.(ViroTrackingState.Normal, 1);
+    } catch (e) {
+      this.opts.onError?.(e instanceof Error ? e : new Error(String(e)));
+      throw e;
+    }
+  }
+
+  /**
+   * Seek to one recorded frame, inject its pose, and paint it as the camera
+   * background. Resolves once the video has actually decoded that frame, so a
+   * caller can screenshot immediately afterwards without racing the decoder.
+   *
+   * Returns false past the end of the recording.
+   */
+  async renderPlaybackFrame(index: number): Promise<boolean> {
+    const src = this.opts.playback;
+    const { video, canvas, ctx } = this;
+    if (!src || !video || !canvas || !ctx) return false;
+    const frame = src.frames[index];
+    if (!frame) return false;
+
+    await new Promise<void>((resolve) => {
+      const done = () => { video.removeEventListener("seeked", done); resolve(); };
+      video.addEventListener("seeked", done);
+      video.currentTime = frame.t;
+    });
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.drawImage(video, 0, 0, w, h);
+    const rgba = ctx.getImageData(0, 0, w, h).data;
+
+    // A frame the tracker did not hold has no pose worth drawing against.
+    // Reporting Limited hides the scene and leaves the camera feed alone, which
+    // is what a device does and what an honest preview should show.
+    const state = frame.tracked === false
+      ? ViroTrackingState.Limited
+      : ViroTrackingState.Normal;
+    this.opts.sceneApi.arSetPose(
+      frame.q[0], frame.q[1], frame.q[2], frame.q[3],
+      frame.p[0], frame.p[1], frame.p[2], state,
+    );
+    this.lastCamPos = [frame.p[0], frame.p[1], frame.p[2]];
+    this.lastCamQuat = [frame.q[0], frame.q[1], frame.q[2], frame.q[3]];
+
+    const planes = src.planes?.[index];
+    if (planes) {
+      this.lastPlanes = planes;
+      this.opts.onAnchorsUpdated?.(planes);
+    }
+
+    if (this.opts.showCameraBackground !== false) {
+      this.updateCameraBackground(rgba, w, h);
+    }
+    this.playbackIndex = index;
+    return true;
+  }
+
+  /** How many frames the loaded recording has. */
+  get playbackFrameCount(): number {
+    return this.opts.playback?.frames.length ?? 0;
   }
 
   private loop = (): void => {

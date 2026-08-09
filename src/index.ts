@@ -46,6 +46,8 @@ export type {
   SlamIntrinsics,
   SlamTuning,
   ArPlaneAnchor,
+  ArPlaybackSource,
+  ArPlaybackFrame,
   ArPlaneAlignment,
   ArHitResult,
 } from "./arSession.js";
