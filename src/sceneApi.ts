@@ -541,4 +541,28 @@ export class ViroSceneApi {
   arSetCameraImageSize(width: number, height: number): void {
     this.m.viroARSetCameraImageSize(width, height);
   }
+  /**
+   * The camera's real intrinsics, which the projection frustum is built from.
+   *
+   * Prefer this over arSetCameraImageSize wherever the intrinsics are known.
+   * With only the dimensions, virocore projects the scene through a fixed
+   * 60-degree vertical field of view — the camera background is a screen-space
+   * surface and fills the viewport regardless, so the feed looks right while the
+   * 3-D content sits in the wrong place, slightly near the optical axis and
+   * badly toward the edges.
+   *
+   * Returns false against a virocore build without the binding, so a caller can
+   * tell "no intrinsics were used" from "intrinsics were applied".
+   */
+  arSetCameraIntrinsics(
+    fx: number, fy: number, cx: number, cy: number,
+    width: number, height: number,
+  ): boolean {
+    if (typeof this.m.viroARSetCameraIntrinsics !== "function") {
+      this.m.viroARSetCameraImageSize(width, height);
+      return false;
+    }
+    this.m.viroARSetCameraIntrinsics(fx, fy, cx, cy, width, height);
+    return true;
+  }
 }

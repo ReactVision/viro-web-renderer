@@ -218,6 +218,13 @@ export interface ViroWebModule {
   viroARSetCameraBackground(textureHandle: number): void;
   // Report the camera image dimensions (used for projection).
   viroARSetCameraImageSize(width: number, height: number): void;
+  // Report the camera's real intrinsics, which the projection is built from.
+  // Optional: builds of virocore predating it fall back to a fixed 60-degree
+  // vertical field of view.
+  viroARSetCameraIntrinsics?(
+    fx: number, fy: number, cx: number, cy: number,
+    width: number, height: number,
+  ): void;
 
   // Emscripten virtual filesystem (exported via EXPORTED_RUNTIME_METHODS=[...,FS]).
   FS: {

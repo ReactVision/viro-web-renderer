@@ -242,6 +242,18 @@ export interface ArPlaybackSource {
   frames: ArPlaybackFrame[];
   /** Optional plane anchors per frame, already in virocore space. */
   planes?: ArPlaneAnchor[][];
+  /**
+   * The recording camera's intrinsics. Supply them: the poses were solved with
+   * this camera, and rendering them through a different one puts the content in
+   * the wrong place — see ViroArSession.applyIntrinsics.
+   */
+  intrinsics?: SlamIntrinsics;
+  /**
+   * The resolution `intrinsics` were measured at, when it is not the video's
+   * own. Focal length in pixels scales with the image, so intrinsics from a
+   * 1920-wide capture describe a 640-wide decode only after scaling.
+   */
+  intrinsicsSize?: { width: number; height: number };
 }
 
 // --- Axis conversion (slam Z-up/OpenCV → virocore Y-up/GL), ported from the
@@ -468,7 +480,9 @@ export class ViroArSession {
       this.ctx = this.canvas.getContext("2d", { willReadFrequently: true });
 
       this.opts.sceneApi.initAR();
-      this.opts.sceneApi.arSetCameraImageSize(capW, capH);
+      // The same intrinsics the tracker is solving with, so the renderer's
+      // frustum is the camera the poses were computed in.
+      this.applyIntrinsics(intr, capW, capH);
 
       this.startImu();
 
@@ -530,6 +544,32 @@ export class ViroArSession {
     if (typeof loaded === "function") return loaded;
     if (loaded && typeof loaded.default === "function") return loaded.default;
     throw new Error("loadSlam did not resolve to a slam-wasm factory");
+  }
+
+  /**
+   * Hand the renderer the camera the poses were solved in.
+   *
+   * Without intrinsics virocore builds its projection from a fixed 60-degree
+   * vertical field of view. The camera image is drawn as a screen-space surface
+   * and fills the viewport either way, so a mismatch never shows up in the feed
+   * — it shows up as 3-D content standing somewhere other than where it was
+   * anchored, by a little near the centre of the frame and by hundreds of
+   * pixels toward the edges. A 56-degree camera through a 60-degree frustum is
+   * a 7% error in every projected coordinate.
+   */
+  private applyIntrinsics(intr: SlamIntrinsics, width: number, height: number): void {
+    const applied = this.opts.sceneApi.arSetCameraIntrinsics(
+      intr.fx, intr.fy, intr.cx, intr.cy, width, height,
+    );
+    if (!applied) {
+      this.opts.onError?.(
+        new Error(
+          "this virocore build has no viroARSetCameraIntrinsics; the scene is " +
+            "projected through an assumed 60 degree field of view and will not " +
+            "line up with the camera image",
+        ),
+      );
+    }
   }
 
   private resolveIntrinsics(width: number, height: number): SlamIntrinsics {
@@ -628,7 +668,21 @@ export class ViroArSession {
       // one, and the scene composites over black — which looks like a video
       // decoding problem and is not.
       this.opts.sceneApi.initAR();
-      this.opts.sceneApi.arSetCameraImageSize(canvas.width, canvas.height);
+      // Scale to the decoded size: the recording's header reports intrinsics
+      // for the capture resolution, which need not be what the <video> hands
+      // over.
+      const from = src.intrinsicsSize;
+      const sx = from && from.width > 0 ? canvas.width / from.width : 1;
+      const sy = from && from.height > 0 ? canvas.height / from.height : 1;
+      const intr: SlamIntrinsics = src.intrinsics
+        ? {
+            fx: src.intrinsics.fx * sx,
+            fy: src.intrinsics.fy * sy,
+            cx: src.intrinsics.cx * sx,
+            cy: src.intrinsics.cy * sy,
+          }
+        : this.resolveIntrinsics(canvas.width, canvas.height);
+      this.applyIntrinsics(intr, canvas.width, canvas.height);
 
       this.running = true;
       this.opts.onStatus?.(ViroTrackingState.Normal, 1);
