@@ -343,6 +343,9 @@ export class ViroSceneApi {
   setMaterialShaderUniformFloat(material: ViroHandle, name: string, value: number): void {
     this.m.viroSetMaterialShaderUniformFloat(material, name, value);
   }
+  setMaterialShaderUniformVec2(material: ViroHandle, name: string, x: number, y: number): void {
+    this.m.viroSetMaterialShaderUniformVec2(material, name, x, y);
+  }
   setMaterialShaderUniformVec3(material: ViroHandle, name: string, x: number, y: number, z: number): void {
     this.m.viroSetMaterialShaderUniformVec3(material, name, x, y, z);
   }

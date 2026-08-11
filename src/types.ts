@@ -97,6 +97,7 @@ export interface ViroWebModule {
   // per-frame call needed here beyond the initial set. No vec2 variant: the
   // native bridges these mirror don't expose one either.
   viroSetMaterialShaderUniformFloat(material: number, name: string, value: number): void;
+  viroSetMaterialShaderUniformVec2(material: number, name: string, x: number, y: number): void;
   viroSetMaterialShaderUniformVec3(material: number, name: string, x: number, y: number, z: number): void;
   viroSetMaterialShaderUniformVec4(material: number, name: string, x: number, y: number, z: number, w: number): void;
   // matrix must have exactly 16 elements.
