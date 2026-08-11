@@ -337,6 +337,24 @@ export class ViroSceneApi {
   removeAllMaterialShaderModifiers(material: ViroHandle): void {
     this.m.viroRemoveAllMaterialShaderModifiers(material);
   }
+  // Dynamic shader-uniform updates. The uniform must be declared in a
+  // shaderModifier already applied to this material (addMaterialShaderModifier)
+  // for these to have any visible effect — same rule as native.
+  setMaterialShaderUniformFloat(material: ViroHandle, name: string, value: number): void {
+    this.m.viroSetMaterialShaderUniformFloat(material, name, value);
+  }
+  setMaterialShaderUniformVec3(material: ViroHandle, name: string, x: number, y: number, z: number): void {
+    this.m.viroSetMaterialShaderUniformVec3(material, name, x, y, z);
+  }
+  setMaterialShaderUniformVec4(material: ViroHandle, name: string, x: number, y: number, z: number, w: number): void {
+    this.m.viroSetMaterialShaderUniformVec4(material, name, x, y, z, w);
+  }
+  setMaterialShaderUniformMat4(material: ViroHandle, name: string, matrix: Float32Array | number[]): void {
+    this.m.viroSetMaterialShaderUniformMat4(material, name, matrix);
+  }
+  setMaterialShaderUniformTexture(material: ViroHandle, name: string, texture: ViroHandle): void {
+    this.m.viroSetMaterialShaderUniformTexture(material, name, texture);
+  }
   destroyMaterial(material: ViroHandle): void {
     this.m.viroDestroyMaterial(material);
   }

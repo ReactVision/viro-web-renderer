@@ -91,6 +91,18 @@ export interface ViroWebModule {
     requiresCameraTexture: boolean,
   ): void;
   viroRemoveAllMaterialShaderModifiers(material: number): void;
+  // Dynamic shader-uniform updates (ViroMaterials.updateShaderUniform). Each
+  // just stores the value on the material; the renderer re-pushes it to the
+  // GL uniform of the same name every frame the material is bound — no
+  // per-frame call needed here beyond the initial set. No vec2 variant: the
+  // native bridges these mirror don't expose one either.
+  viroSetMaterialShaderUniformFloat(material: number, name: string, value: number): void;
+  viroSetMaterialShaderUniformVec3(material: number, name: string, x: number, y: number, z: number): void;
+  viroSetMaterialShaderUniformVec4(material: number, name: string, x: number, y: number, z: number, w: number): void;
+  // matrix must have exactly 16 elements.
+  viroSetMaterialShaderUniformMat4(material: number, name: string, matrix: Float32Array | number[]): void;
+  // texture may be VIRO_INVALID_HANDLE (0) to clear it.
+  viroSetMaterialShaderUniformTexture(material: number, name: string, texture: number): void;
 
   // Textures. pixels is an RGBA8 buffer (width*height*4 bytes).
   viroCreateTextureRGBA(
