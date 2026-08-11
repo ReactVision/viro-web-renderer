@@ -155,7 +155,7 @@ and set `assetBaseUrl` to that directory. Metro's asset pipeline for arbitrary
 
 ## AR (`ViroArSession`)
 
-Web AR is driven by a second WASM module, [slam-wasm](../slam), which does the
+Web AR is driven by a second WASM module, [tinyvio](../tinyvio), which does the
 6-DoF tracking + plane detection. This package provides `ViroArSession`: it
 captures the camera + IMU, feeds slam, converts the pose from slam's Z-up/OpenCV
 frame to virocore's Y-up/GL frame, and injects it into the renderer via the AR
@@ -230,7 +230,5 @@ Three things worth knowing:
 
 `requestDeviceMotionPermission()` is exported to request iOS Safari's DeviceMotion
 permission from a tap. The camera feed, pose tracking, and plane detection all
-require **HTTPS** and a device with an IMU. See the Viro web docs for the full
-guides: [Usage](../viro/docs/web/USAGE.md#ar),
-[Integration](../viro/docs/web/INTEGRATION.md#ar-setup),
-[Internals](../viro/docs/web/INTERNALS.md#the-ar-pipeline).
+require **HTTPS** and a device with an IMU. The internal Viro web docs (Usage, Integration,
+Internals) carry the full AR guides.
