@@ -56,6 +56,15 @@ export enum ViroBlendMode {
   Screen = 5,
 }
 
+/** Mirrors VROShaderEntryPoint (VROShaderModifier.h). Unknown strings fall back to "fragment". */
+export type ViroShaderEntryPoint =
+  | "geometry"
+  | "vertex"
+  | "surface"
+  | "fragment"
+  | "lightingModel"
+  | "image";
+
 /** Text horizontal alignment (mirrors VROTextHorizontalAlignment). */
 export enum ViroTextHorizontalAlignment {
   Left = 0,
@@ -304,6 +313,29 @@ export class ViroSceneApi {
   }
   setMaterialReadsFromDepthBuffer(material: ViroHandle, reads: boolean): void {
     this.m.viroSetMaterialReadsFromDepthBuffer(material, reads);
+  }
+  // shaderCode should already have any `uniforms` declarations prepended
+  // (uniforms + "\n" + body) — the caller owns that concatenation, same as
+  // MaterialManager.java::parseShaderModifiers on Android.
+  addMaterialShaderModifier(
+    material: ViroHandle,
+    entryPoint: ViroShaderEntryPoint,
+    shaderCode: string,
+    varyings?: string[],
+    requiresSceneDepth = false,
+    requiresCameraTexture = false,
+  ): void {
+    this.m.viroAddMaterialShaderModifier(
+      material,
+      entryPoint,
+      shaderCode,
+      varyings,
+      requiresSceneDepth,
+      requiresCameraTexture,
+    );
+  }
+  removeAllMaterialShaderModifiers(material: ViroHandle): void {
+    this.m.viroRemoveAllMaterialShaderModifiers(material);
   }
   destroyMaterial(material: ViroHandle): void {
     this.m.viroDestroyMaterial(material);

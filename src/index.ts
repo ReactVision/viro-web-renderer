@@ -31,6 +31,7 @@ export type {
   ViroHandle,
   ViroNodeEventHandlers,
   ViroAnimationHandlers,
+  ViroShaderEntryPoint,
 } from "./sceneApi.js";
 export {
   ViroArSession,

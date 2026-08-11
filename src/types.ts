@@ -79,6 +79,18 @@ export interface ViroWebModule {
   viroSetMaterialBlendMode(material: number, mode: number): void;
   viroSetMaterialWritesToDepthBuffer(material: number, writes: boolean): void;
   viroSetMaterialReadsFromDepthBuffer(material: number, reads: boolean): void;
+  // shaderCode is the modifier body with any `uniforms` block already
+  // prepended by the caller (uniforms + "\n" + body), matching the native
+  // bridges' convention. varyings is optional; pass undefined for none.
+  viroAddMaterialShaderModifier(
+    material: number,
+    entryPoint: string,
+    shaderCode: string,
+    varyings: string[] | undefined,
+    requiresSceneDepth: boolean,
+    requiresCameraTexture: boolean,
+  ): void;
+  viroRemoveAllMaterialShaderModifiers(material: number): void;
 
   // Textures. pixels is an RGBA8 buffer (width*height*4 bytes).
   viroCreateTextureRGBA(
