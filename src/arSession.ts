@@ -254,6 +254,19 @@ export interface ArPlaybackSource {
    * 1920-wide capture describe a 640-wide decode only after scaling.
    */
   intrinsicsSize?: { width: number; height: number };
+  /**
+   * The video's display rotation in degrees, from its container metadata.
+   *
+   * Needed because `intrinsics` describe the sensor-native frame while the
+   * `<video>` element presents the rotated one: a phone recording is commonly a
+   * 3840x2160 stream tagged -90 that every player shows as 2160x3840. Left
+   * unstated, the scale factors in startPlayback get computed across the two
+   * orientations -- a portrait canvas divided by a landscape intrinsics size --
+   * so fx and fy come out wrong by different amounts and in opposite
+   * directions. The camera then has the wrong field of view and content does
+   * not hold still against the footage, which reads as a tracking fault.
+   */
+  intrinsicsRotation?: number;
 }
 
 // --- Axis conversion (slam Z-up/OpenCV → virocore Y-up/GL), ported from the
@@ -364,6 +377,74 @@ function slamStatusToTrackingState(status: number): ViroTrackingState {
  * Runs the camera + IMU capture loop and injects poses into the renderer.
  * Create one, call start(), and stop() when done.
  */
+/**
+ * Quarter turns, clockwise, that a player applies to reach the displayed image.
+ *
+ * ffmpeg reports `rotation=-90` for the common portrait phone capture, and the
+ * displayed frame is the sensor frame turned 90 degrees *clockwise* — verified
+ * by decoding one frame both ways and correlating. The sign is the opposite of
+ * what the metadata reads like, which is worth stating because guessing it
+ * wrong is silent: the content still renders, just never where the footage is.
+ */
+/** Hamilton product, a then b, both (x, y, z, w). */
+function quatMulLocal(
+  a: readonly number[], b: readonly [number, number, number, number],
+): [number, number, number, number] {
+  const [ax, ay, az, aw] = a as [number, number, number, number];
+  const [bx, by, bz, bw] = b;
+  return [
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+    aw * bw - ax * bx - ay * by - az * bz,
+  ];
+}
+
+function quarterTurnsCW(rotationDeg: number): number {
+  return (((Math.round(-rotationDeg / 90) % 4) + 4) % 4);
+}
+
+/**
+ * Intrinsics as they apply to the displayed image.
+ *
+ * A quarter turn swaps the focal axes and moves the principal point. This is
+ * only half the correction: turning the image also means the displayed x axis
+ * no longer runs along the camera's x, so the camera has to be rolled to match
+ * (see rollForDisplay). Intrinsics alone cannot express an axis swap, and
+ * applying them without the roll leaves content that renders but does not sit
+ * on the footage.
+ */
+function rotateIntrinsics(
+  i: SlamIntrinsics,
+  size: { width: number; height: number },
+  rotationDeg: number,
+): { intrinsics: SlamIntrinsics; size: { width: number; height: number } } {
+  const q = quarterTurnsCW(rotationDeg);
+  const { width: W, height: H } = size;
+  if (q === 0) return { intrinsics: i, size };
+  if (q === 2) return { intrinsics: { ...i, cx: W - 1 - i.cx, cy: H - 1 - i.cy }, size };
+  const swapped = { fx: i.fy, fy: i.fx };
+  return q === 1
+    // clockwise: (x, y) -> (H-1-y, x)
+    ? { intrinsics: { ...swapped, cx: H - 1 - i.cy, cy: i.cx }, size: { width: H, height: W } }
+    // anticlockwise: (x, y) -> (y, W-1-x)
+    : { intrinsics: { ...swapped, cx: i.cy, cy: W - 1 - i.cx }, size: { width: H, height: W } };
+}
+
+/**
+ * The camera roll that goes with that image rotation, as a quaternion to apply
+ * on the right of the pose (camera-local).
+ *
+ * Solved against ground truth rather than reasoned: projecting the tracker's
+ * own anchor through every combination of roll and axis swap, only 90 degrees
+ * with the swap reproduces the pixel the tracker reports, and it does so to
+ * 0.004 px median over 205 frames. Every other combination is off by hundreds.
+ */
+function rollForDisplay(rotationDeg: number): [number, number, number, number] {
+  const a = (quarterTurnsCW(rotationDeg) * Math.PI) / 2;
+  return [0, 0, Math.sin(a / 2), Math.cos(a / 2)];
+}
+
 export class ViroArSession {
   private readonly opts: ViroArSessionOptions;
   private readonly tuning: SlamTuning;
@@ -671,16 +752,19 @@ export class ViroArSession {
       // Scale to the decoded size: the recording's header reports intrinsics
       // for the capture resolution, which need not be what the <video> hands
       // over.
-      const from = src.intrinsicsSize;
+      // Rotate into the orientation the canvas is actually in before scaling to
+      // it. Computing the factors across mismatched orientations made them
+      // anisotropic and wrong: on a -90 recording fx came out 44% short and fy
+      // 78% long, from intrinsics whose two axes are equal.
+      const rotated = src.intrinsics && src.intrinsicsSize
+        ? rotateIntrinsics(src.intrinsics, src.intrinsicsSize, src.intrinsicsRotation ?? 0)
+        : null;
+      const from = rotated?.size ?? src.intrinsicsSize;
       const sx = from && from.width > 0 ? canvas.width / from.width : 1;
       const sy = from && from.height > 0 ? canvas.height / from.height : 1;
-      const intr: SlamIntrinsics = src.intrinsics
-        ? {
-            fx: src.intrinsics.fx * sx,
-            fy: src.intrinsics.fy * sy,
-            cx: src.intrinsics.cx * sx,
-            cy: src.intrinsics.cy * sy,
-          }
+      const base = rotated?.intrinsics ?? src.intrinsics;
+      const intr: SlamIntrinsics = base
+        ? { fx: base.fx * sx, fy: base.fy * sy, cx: base.cx * sx, cy: base.cy * sy }
         : this.resolveIntrinsics(canvas.width, canvas.height);
       this.applyIntrinsics(intr, canvas.width, canvas.height);
 
@@ -723,12 +807,17 @@ export class ViroArSession {
     const state = frame.tracked === false
       ? ViroTrackingState.Limited
       : ViroTrackingState.Normal;
+    // The pose describes the sensor-native camera; the background is the
+    // rotated frame. Roll the camera to match, or content renders in the right
+    // world position and the wrong place on screen.
+    const roll = rollForDisplay(src.intrinsicsRotation ?? 0);
+    const q = quatMulLocal(frame.q, roll);
     this.opts.sceneApi.arSetPose(
-      frame.q[0], frame.q[1], frame.q[2], frame.q[3],
+      q[0], q[1], q[2], q[3],
       frame.p[0], frame.p[1], frame.p[2], state,
     );
     this.lastCamPos = [frame.p[0], frame.p[1], frame.p[2]];
-    this.lastCamQuat = [frame.q[0], frame.q[1], frame.q[2], frame.q[3]];
+    this.lastCamQuat = [q[0], q[1], q[2], q[3]];
 
     const planes = src.planes?.[index];
     if (planes) {
