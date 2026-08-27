@@ -68,9 +68,8 @@ function computeSize(
  * {@link ViroWebRenderer.create}; the render loop is driven internally by the
  * WASM module once initialized.
  *
- * NOTE (Phase 1): initialization currently builds a demo scene (a spinning
- * cube). The declarative scene / component C API arrives with the Phase 2
- * bridge; this class is the host those components will attach to.
+ * `create()` gives you an empty scene. Build into it through {@link scene},
+ * the handle-based API the Viro web bridge's reconciler drives.
  */
 export class ViroWebRenderer {
   private disposed = false;
@@ -137,6 +136,11 @@ export class ViroWebRenderer {
     const path = `/viro_model_${nodeHandle}.${MODEL_EXT[format]}`;
     this.module.FS.writeFile(path, bytes);
     return new Promise<boolean>((resolve) => {
+      // One resolver per node, and a second load replaces the first. Settle the
+      // one being replaced rather than dropping it: the native callback carries
+      // only the node handle, so it can never arrive for the superseded load,
+      // and an awaiter of it would wait for the rest of the session.
+      this.modelLoadResolvers.get(nodeHandle)?.(false);
       this.modelLoadResolvers.set(nodeHandle, resolve);
       this.module.viroLoadModel(nodeHandle, path, format);
     });
@@ -268,13 +272,23 @@ export class ViroWebRenderer {
   }
 
   /**
-   * Release references. NOTE: the WASM main loop is not yet stoppable from the
-   * C API — a proper teardown (emscripten_cancel_main_loop + context destroy)
-   * is a follow-up. For now this just marks the instance unusable.
+   * Release references and stop responding to input.
+   *
+   * NOTE: the WASM main loop is not stoppable from the C API yet — a proper
+   * teardown (emscripten_cancel_main_loop + context destroy) is a follow-up.
+   * Until then a disposed renderer keeps drawing, so an app that mounts and
+   * unmounts repeatedly accumulates render loops. Create one and keep it.
+   *
+   * Any model load still in flight is settled as failed: its native callback
+   * would have nowhere to arrive.
    */
   dispose(): void {
     this.detachInput?.();
     this.detachInput = undefined;
+    for (const resolve of this.modelLoadResolvers.values()) resolve(false);
+    this.modelLoadResolvers.clear();
+    this.eventHandlers.clear();
+    this.animationHandlers.clear();
     this.disposed = true;
   }
 
