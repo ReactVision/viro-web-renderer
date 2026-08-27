@@ -137,3 +137,33 @@ roundTrip("no intrinsics, 60-degree fallback", null, 0, 0, 800, 600);
 }
 
 console.log("hitTest: all checks passed");
+
+// --- Live intrinsics scale onto the delivered capture -----------------------
+// A calibration is done at the sensor's full resolution; getUserMedia hands over
+// something smaller. Taking the measured numbers as-is makes the focal too long
+// by the ratio, which misplaces content and reads as a tracking fault.
+{
+  const s = new ViroArSession({
+    sceneApi: sceneApiStub,
+    loadSlam: () => {},
+    intrinsics: { fx: 1357.41, fy: 1357.41, cx: 960, cy: 720 },
+    intrinsicsSize: { width: 1920, height: 1440 },
+  });
+  const got = s.resolveIntrinsics(640, 480);
+  const k = 640 / 1920;
+  for (const [field, want] of [["fx", 1357.41 * k], ["fy", 1357.41 * k],
+                               ["cx", 960 * k], ["cy", 720 * k]]) {
+    assert.ok(
+      Math.abs(got[field] - want) < 1e-9,
+      `${field} came back ${got[field]}, wanted ${want}`,
+    );
+  }
+  // Without intrinsicsSize the numbers describe the delivered frame already.
+  const s2 = new ViroArSession({
+    sceneApi: sceneApiStub,
+    loadSlam: () => {},
+    intrinsics: { fx: 452.5, fy: 452.5, cx: 320, cy: 240 },
+  });
+  assert.equal(s2.resolveIntrinsics(640, 480).fx, 452.5);
+  console.log("  ok  live intrinsics scale onto the capture (and pass through without a size)");
+}

@@ -246,8 +246,26 @@ export interface ViroArSessionOptions {
   captureHeight?: number;
   /** Camera facing; default "environment" (rear camera). */
   facingMode?: "environment" | "user";
-  /** Override camera intrinsics (else derived from the actual capture size). */
+  /**
+   * Measured camera intrinsics, instead of the resolution-derived guess.
+   *
+   * Supply these when you have them: the frustum, the tracking and the hit test
+   * are all built on this one camera, and the fallback is an assumption whose
+   * best-fitting value varied by a factor of 1.6 across three recordings from a
+   * single phone.
+   */
   intrinsics?: SlamIntrinsics;
+  /**
+   * The resolution `intrinsics` were measured at, when it is not the size the
+   * camera actually delivers.
+   *
+   * Focal length in pixels scales with the image, and a calibration is normally
+   * done at the sensor's full resolution while `getUserMedia` hands over
+   * something far smaller — 1920x1440 measured against a 640x480 capture is a
+   * focal three times too long. Left unstated, the intrinsics are taken to
+   * describe the delivered frame as-is, which is right only when the two match.
+   */
+  intrinsicsSize?: { width: number; height: number };
   /** Override SLAM tuning. */
   tuning?: Partial<SlamTuning>;
   /** Draw the live camera feed behind the scene. Default true. */
@@ -745,7 +763,23 @@ export class ViroArSession {
   }
 
   private resolveIntrinsics(width: number, height: number): SlamIntrinsics {
-    if (this.opts.intrinsics) return this.opts.intrinsics;
+    const given = this.opts.intrinsics;
+    if (given) {
+      // Scale a calibration measured at another resolution onto this capture,
+      // the same way the playback path does. Without `intrinsicsSize` the
+      // numbers are taken to describe the delivered frame already.
+      const from = this.opts.intrinsicsSize;
+      if (!from || from.width <= 0 || from.height <= 0) return given;
+      const sx = width / from.width;
+      const sy = height / from.height;
+      return {
+        ...given,
+        fx: given.fx * sx,
+        fy: given.fy * sy,
+        cx: given.cx * sx,
+        cy: given.cy * sy,
+      };
+    }
 
     // No calibration, so this is an assumption — but an aspect-aware one, which
     // the previous `0.9 * width` was not.
