@@ -7,7 +7,7 @@ First published release.
 WebAssembly + WebGL2 build of the Viro renderer for the web: the compiled
 module, the typed scene API (`ViroSceneApi`) the Viro web bridge drives, and
 `ViroArSession` for web AR — camera, 6-DoF pose and plane detection through
-[tinyvio](https://github.com/ReactVision/tinyvio) — plus a playback mode that
+tinyvio — plus a playback mode that
 replays a recorded session instead of tracking a live one.
 
 Everything below happened between the last internal build and this publish, and

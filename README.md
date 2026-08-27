@@ -24,7 +24,7 @@ MIT licensed and free forever.
 
 > **Used automatically by [`@reactvision/react-viro`](https://www.npmjs.com/package/@reactvision/react-viro) on the web** — install it alongside the core package and the web navigators pick it up. You can also drive it directly, which is what the rest of this document covers.
 
-> **Web AR needs a second module.** Pose tracking and plane detection come from [tinyvio](https://github.com/ReactVision/tinyvio), which you build and host yourself — see [AR](#ar-viroarsession). 3D scenes need nothing beyond this package.
+> **Web AR needs a second module.** Pose tracking and plane detection come from tinyvio, ReactVision's visual-inertial tracker, which is not yet distributed publicly — see [AR](#ar-viroarsession). 3D scenes need nothing beyond this package.
 
 ## Supported Browsers
 
@@ -163,14 +163,21 @@ Then serve the three files from a known path — copy them to the app's `public/
 
 ## AR (`ViroArSession`)
 
-Web AR needs a second WASM module. The renderer draws the scene from a pose someone else computed; that someone is [tinyvio](https://github.com/ReactVision/tinyvio), which does the 6-DoF tracking and plane detection. Most apps get this through the bridge's `ViroARSceneNavigator` on web; the low-level API below is for custom hosts.
+Web AR needs a second WASM module. The renderer draws the scene from a pose someone else computed; that someone is tinyvio, ReactVision's visual-inertial tracker, which does the 6-DoF tracking and plane detection. Most apps get this through the bridge's `ViroARSceneNavigator` on web; the low-level API below is for custom hosts.
 
 ### Getting the tracking engine
 
-tinyvio is not on npm. Build it and host the two files yourself:
+> **tinyvio is not yet distributed publicly.** It is not on npm, and its
+> repository is private while the team settles how it ships. If you need web AR
+> today, ask us on [Discord](https://discord.gg/A6TaFNqwVc) or through
+> <https://reactvision.xyz/contact> and we will get you the build. Everything
+> else in this package — 3D scenes, models, materials, animation, the whole
+> `ViroSceneApi` — works with no second module and no camera.
+
+The engine is two files, `tinyvio-slam.js` and `tinyvio-slam.wasm`, which you
+serve from your own app. With access to the repository they are built with:
 
 ```bash
-git clone https://github.com/ReactVision/tinyvio && cd tinyvio
 source "$EMSDK/emsdk_env.sh"
 ./scripts/build_slam_wasm.sh          # -> web/slam/tinyvio-slam.{js,wasm}
 cp web/slam/tinyvio-slam.* /path/to/your/app/public/
