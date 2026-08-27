@@ -45,12 +45,6 @@ surprised by it.
 
 ### Changed
 
-- **The preloaded font is DejaVu Sans, not Helvetica.** Helvetica came from
-  virocore's preload directory and was 2.3 MB of a 2.4 MB payload — and
-  Linotype's to license, not ours to redistribute. `viro-web.data` is now 779 KB
-  and the package tarball roughly halves. Text renders in DejaVu Sans; metrics
-  differ from Helvetica, so laid-out text will reflow slightly.
-
 - **`dispose()`** now settles in-flight model loads as failed and clears its
   handler maps. It still cannot stop the WASM main loop — that is a C API
   limitation, and it is documented rather than implied.
@@ -79,6 +73,6 @@ surprised by it.
   package with no renderer in it and no error.
 - `publishConfig.access` is `public`; the repository URL is HTTPS; `engines`,
   `author`, `homepage` and `bugs` are filled in.
-- There are tests now: a `hitTest` round trip, and a tarball check that every
-  binding `types.ts` declares exists in the shipped binary and that nothing in
-  the payload is someone else's to redistribute.
+- There are tests now: a `hitTest` round trip, and a tarball check that the
+  public exports load and that every binding `types.ts` declares exists in the
+  shipped binary.

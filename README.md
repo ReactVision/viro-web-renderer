@@ -319,18 +319,16 @@ npm test
 `test/hitTest.test.mjs` round-trips a point through the projection and back out
 through `hitTest`, which is the property that broke when the renderer started
 using real camera intrinsics. `test/package.test.mjs` checks the tarball's
-invariants: the public exports load, every binding `types.ts` declares exists in
-the shipped binary, and nothing in the payload is someone else's to
-redistribute.
+invariants: the public exports load, the glue is an ES module, and every binding
+`types.ts` declares exists in the shipped binary.
 
 ## Licensing
 
-This package is MIT (`LICENSE`). The shipped binaries contain libjpeg, FreeType,
-Bullet, protobuf-lite, zlib, SDL2 and the Emscripten runtime, and the preloaded
-font is DejaVu Sans — all permissive, all with their notices in
+This package is MIT (`LICENSE`). The shipped binaries statically link libjpeg,
+FreeType, Bullet, protobuf-lite, zlib, SDL2 and the Emscripten runtime — all
+permissive, all with their notices in
 [`THIRD-PARTY-LICENSES.md`](./THIRD-PARTY-LICENSES.md). If you copy the three
-`wasm/` files to a CDN, that file is the notice you need to keep with them; the
-font's own licence is preloaded inside `viro-web.data` beside it.
+`wasm/` files to a CDN, that file is the notice to keep with them.
 
 ## Module format
 

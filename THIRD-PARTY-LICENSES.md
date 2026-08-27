@@ -2,7 +2,7 @@
 
 `@reactvision/viro-web-renderer` is MIT (see `LICENSE`). The package also ships
 two prebuilt binaries — `wasm/viro-web.wasm` and `wasm/viro-web.data` — that
-contain code and data from the projects below. Those projects' licences permit
+contain code from the projects below. Those projects' licences permit
 redistribution and require that their notices travel with the binary, which is
 what this file is for.
 
@@ -127,64 +127,3 @@ code. © 2010-2024 Emscripten authors, MIT / University of Illinois NCSA
 open-source licence.
 
 ---
-
-## DejaVu Sans (inside `wasm/viro-web.data`)
-
-The renderer preloads one font, used for `ViroText` and as the fallback for any
-family a page asks for that is not there.
-
-The full licence text is preloaded into the WASM filesystem beside the font, at
-`/LICENSE_DEJAVU.txt`, so that copying the three `wasm/` files to a CDN — which
-is a documented way to deploy this — cannot separate the font from its notice.
-
-> Fonts are © 2003 Bitstream, Inc. All Rights Reserved. Bitstream Vera is a
-> trademark of Bitstream, Inc. DejaVu changes are in public domain. Glyphs
-> imported from Arev fonts are © 2006 Tavmjong Bah. All Rights Reserved.
->
-> Permission is hereby granted, free of charge, to any person obtaining a copy
-> of the fonts accompanying this license ("Fonts") and associated documentation
-> files (the "Font Software"), to reproduce and distribute the Font Software,
-> including without limitation the rights to use, copy, merge, publish,
-> distribute, and/or sell copies of the Font Software, and to permit persons to
-> whom the Font Software is furnished to do so, subject to the following
-> conditions:
->
-> The above copyright and trademark notices and this permission notice shall be
-> included in all copies of one or more of the Font Software typefaces.
->
-> The Font Software may be modified, altered, or added to, and in particular the
-> designs of glyphs or characters in the Fonts may be modified and additional
-> glyphs or characters may be added to the Fonts, only if the fonts are renamed
-> to names not containing either the words "Bitstream" or the word "Vera".
->
-> This License becomes null and void to the extent applicable to Fonts or Font
-> Software that has been modified and is distributed under the "Bitstream Vera"
-> names.
->
-> The Font Software may be sold as part of a larger software package but no copy
-> of one or more of the Font Software typefaces may be sold by itself.
->
-> THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-> OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
-> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
-> TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL BITSTREAM OR THE GNOME FOUNDATION
-> BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY GENERAL,
-> SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN AN ACTION
-> OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF THE USE OR INABILITY TO
-> USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE FONT SOFTWARE.
->
-> Except as contained in this notice, the names of Gnome, the Gnome Foundation,
-> and Bitstream Inc., shall not be used in advertising or otherwise to promote
-> the sale, use or other dealings in this Font Software without prior written
-> authorization from the Gnome Foundation or Bitstream Inc., respectively. For
-> further information, contact: fonts at gnome dot org.
->
-> The Arev glyphs carry the same terms under the name "Tavmjong Bah"/"Arev";
-> see `/LICENSE_DEJAVU.txt` in the WASM filesystem for that text in full.
-
-### A note on what used to be here
-
-Before v0.1.0 the preloaded font was Helvetica, inherited from the renderer's
-preload directory — 2.3 MB of the 2.4 MB payload, and Linotype's to license, not
-ours to redistribute. It was replaced with DejaVu Sans before the first
-publish. `test/package.test.mjs` fails the build if it comes back.
