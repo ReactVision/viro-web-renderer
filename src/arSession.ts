@@ -2,10 +2,16 @@
  * Web AR orchestration for the Viro renderer.
  *
  * The renderer (virocore/WASM) does not track — it just draws the scene from a
- * pose. Tracking runs in a *second* WASM module, slam-wasm, driven here in JS:
- * we capture the camera + IMU, feed them to slam, read back the 6-DoF pose,
- * convert it from slam's Z-up/OpenCV convention into virocore's Y-up/GL
+ * pose. Tracking runs in a *second* WASM module, tinyvio, driven here in JS: we
+ * capture the camera + IMU, feed them to the tracker, read back the 6-DoF pose,
+ * convert it from the tracker's Z-up/OpenCV convention into virocore's Y-up/GL
  * convention, and inject it via the AR C API (ViroSceneApi.arSet*).
+ *
+ * Everything in this file named `Slam*` is named after a C API, not after the
+ * engine behind it. tinyvio replaced an earlier tracker and deliberately kept
+ * that API — a `SlamModule` factory yielding a `SlamEngine` — so this file, the
+ * bridge, and anything written against either keep working untouched. The names
+ * are the contract; tinyvio is the implementation.
  *
  * This module is framework-agnostic (pure DOM); ViroARSceneNavigator wires it
  * into React and handles the permission UX.
@@ -15,8 +21,13 @@ import type { ViroSceneApi } from "./sceneApi.js";
 import { ViroTrackingState } from "./sceneApi.js";
 
 /**
- * The raw slam-wasm engine (embind class "SlamEngine"; see slam
- * platforms/web/slam_wasm.cpp). Only the members we drive are typed.
+ * The raw tracking engine (embind class "SlamEngine"; see tinyvio's
+ * platforms/slam/slam_web_bindings.cpp). Only the members we drive are typed.
+ *
+ * tinyvio binds three members beyond these — poseConfidence, trackingReason and
+ * groundIsEstimated — that this session does not yet surface. They are not new
+ * estimation; they are states the engine was already in and had no way to say
+ * out loud. See the note on `onStatus` for what that currently costs.
  */
 export interface SlamEngine {
   configure(
@@ -57,7 +68,7 @@ export interface SlamEngine {
   posePz(): number;
   trackingQuality(): number;
   getStatus(): number;
-  // Planes (fetch then read by index; all in slam Z-up world space).
+  // Planes (fetch then read by index; all in the tracker's Z-up world space).
   fetchPlanes(maxPlanes: number): number;
   planeId(i: number): number;
   planeCenterX(i: number): number;
@@ -73,7 +84,15 @@ export interface SlamEngine {
   delete(): void;
 }
 
-/** The Emscripten module produced by slam_wasm.js (MODULARIZE + EXPORT_ES6). */
+/**
+ * The Emscripten module the factory yields.
+ *
+ * tinyvio's `tinyvio-slam.js` is built with MODULARIZE but deliberately without
+ * EXPORT_ES6: it is loaded as a classic <script> that leaves a `SlamModule`
+ * global behind, which is what ViroARSceneNavigator.web's `slamScriptUrl` does.
+ * There is no ES-module build, so `loadSlam` is where you adapt whatever you
+ * have into a factory.
+ */
 export interface SlamWasmModule {
   SlamEngine: new () => SlamEngine;
   /** Live view of WASM heap; re-read each frame (it detaches on memory growth). */
@@ -91,7 +110,7 @@ export enum SlamStatus {
   Lost = 3,
 }
 
-/** slam plane classification (SlamPlaneType in slam_c_api.h). */
+/** Plane classification (SlamPlaneType in tinyvio's platforms/slam/slam_c_api.h). */
 export enum SlamPlaneType {
   HorizontalUpward = 0,
   HorizontalDownward = 1,
@@ -106,10 +125,16 @@ export type ArPlaneAlignment =
   | "Vertical";
 
 /**
- * A detected plane, converted from slam (Z-up) to virocore (Y-up) world space.
+ * A detected plane, converted from the tracker (Z-up) to virocore (Y-up) world space.
  * `rotation` (Euler degrees) orients local +Y to the plane normal, so children
  * placed in the local XZ plane lie on the surface. width/height are the extents
  * along the plane's local X/Z.
+ *
+ * That rectangle is an approximation of what tinyvio actually found. It detects
+ * a boundary polygon and the C API this comes through has only a centre and two
+ * extents, so the polygon is reduced to its bounding box on the way here. The
+ * box is never smaller than the surface and on a room-sized floor it can be
+ * noticeably larger — fine for placing an object on, misleading if you draw it.
  */
 export interface ArPlaneAnchor {
   id: string;
@@ -130,27 +155,57 @@ export interface ArHitResult {
   distance: number;
 }
 
-/** Pinhole intrinsics; if omitted they are derived from the capture resolution. */
+/**
+ * Pinhole intrinsics; if omitted they are derived from the capture resolution.
+ *
+ * `k1`/`k2`/`p1`/`p2` are part of the C API and are accepted, but tinyvio has
+ * no distortion model and ignores them. Fine for a phone's normal rear camera,
+ * wrong for an ultrawide — and said here rather than left to be discovered.
+ */
 export interface SlamIntrinsics {
   fx: number;
   fy: number;
   cx: number;
   cy: number;
+  /** Accepted and unused: tinyvio has no distortion model. */
   k1?: number;
+  /** Accepted and unused: tinyvio has no distortion model. */
   k2?: number;
+  /** Accepted and unused: tinyvio has no distortion model. */
   p1?: number;
+  /** Accepted and unused: tinyvio has no distortion model. */
   p2?: number;
 }
 
-/** SLAM tuning knobs (defaults mirror the slam demo). */
+/**
+ * Tracker tuning knobs, as the C API defines them.
+ *
+ * Five of the eight reach nothing. tinyvio is keyframe-and-bundle-adjustment,
+ * not a filter, so the IMU noise densities have no counterpart and its
+ * `slam_configure` accepts and ignores them; `lostRecovery` it does not read at
+ * all. They stay in the type because the C API has the fields and a caller with
+ * an older engine may still be setting them, but changing them here does
+ * nothing, and a knob that silently does nothing is worse than one that is not
+ * offered — hence the per-field notes.
+ *
+ * `fastThreshold`, `lostThreshold` and `lostGrace` do take effect.
+ */
 export interface SlamTuning {
+  /** FAST corner threshold. Lower finds more corners, and noisier ones. */
   fastThreshold: number;
+  /** Ignored by tinyvio: no filter, so no noise density. */
   gyroNoise: number;
+  /** Ignored by tinyvio: no filter, so no noise density. */
   accelNoise: number;
+  /** Ignored by tinyvio: no filter, so no bias random walk. */
   gyroBiasNoise: number;
+  /** Ignored by tinyvio: no filter, so no bias random walk. */
   accelBiasNoise: number;
+  /** Minimum tracked features to hold a pose. */
   lostThreshold: number;
+  /** Ignored by tinyvio: recovery is not gated on a feature count. */
   lostRecovery: number;
+  /** Consecutive failed frames tolerated before tracking is declared lost. */
   lostGrace: number;
 }
 
@@ -169,9 +224,18 @@ export interface ViroArSessionOptions {
   /** The renderer scene API to inject poses into. */
   sceneApi: ViroSceneApi;
   /**
-   * Loads the slam-wasm module factory. Kept pluggable so this package doesn't
-   * hard-depend on how slam is packaged/served. Typically:
-   *   loadSlam: () => import("@reactvision/slam-web")
+   * Loads the tracking engine's module factory. Kept pluggable so this package
+   * does not hard-depend on how the engine is packaged or served.
+   *
+   * The engine is tinyvio's `tinyvio-slam.js`, built by its
+   * `scripts/build_slam_wasm.sh` (260 KB of WASM plus 41 KB of glue). It is not
+   * on npm; host the two files yourself. Because it is a classic script rather
+   * than an ES module, the usual form is:
+   *
+   *   loadSlam: () => globalThis.SlamModule   // after loading tinyvio-slam.js
+   *
+   * `ViroARSceneNavigator.web` does the script injection for you — pass it
+   * `slamScriptUrl` and it builds this callback.
    */
   loadSlam: () =>
     | Promise<SlamWasmFactory | { default: SlamWasmFactory }>
@@ -192,17 +256,28 @@ export interface ViroArSessionOptions {
   detectPlanes?: boolean;
   /**
    * Render the scene even while tracking is Limited/Unavailable (forces Normal
-   * into the renderer). For desktop dev/preview where there's no IMU so slam
-   * never converges. Real tracking state is still reported via onStatus.
+   * into the renderer). For desktop dev/preview where there's no IMU, so the
+   * tracker never converges. Real tracking state is still reported via onStatus.
    */
   renderWhileLimited?: boolean;
   /** Max planes to fetch per update when detectPlanes is on. Default 10. */
   maxPlanes?: number;
-  /** Reported each frame with the tracking state and quality [0,1]. */
+  /**
+   * Reported each frame with the tracking state and quality [0,1].
+   *
+   * The state is the engine's coarse status mapped onto virocore's three
+   * values, and it is coarser than what tinyvio knows. A `Normal` can be a pose
+   * that is six-degree-of-freedom but not yet metric: content placed by
+   * `hitTest` is right, content placed at "1.5 metres" is not. tinyvio exposes
+   * that distinction as `poseConfidence`, and whether a reported ground plane
+   * was detected or assumed as `groundIsEstimated`; neither is surfaced here
+   * yet. Until they are, treat `Normal` as "drawing is reasonable", not as "the
+   * world is measured".
+   */
   onStatus?: (state: ViroTrackingState, quality: number) => void;
   /** Called when the set of detected planes changes (added/removed/moved). */
   onAnchorsUpdated?: (anchors: ArPlaneAnchor[]) => void;
-  /** Called once if starting fails (permissions, no camera, slam load error). */
+  /** Called once if starting fails (permissions, no camera, engine load error). */
   onError?: (error: Error) => void;
   /**
    * Replay a recorded session instead of tracking a live one.
@@ -269,8 +344,8 @@ export interface ArPlaybackSource {
   intrinsicsRotation?: number;
 }
 
-// --- Axis conversion (slam Z-up/OpenCV → virocore Y-up/GL), ported from the
-// slam demo (demo/index.html updateCamera). Quaternions are [x, y, z, w].
+// --- Axis conversion (tracker Z-up/OpenCV → virocore Y-up/GL), ported from the
+// tracker's own demo host (tinyvio web/index.html). Quaternions are [x, y, z, w].
 //   frameChange = Rx(-90°): world Z-up → world Y-up
 //   cameraFlip  = Rx(180°): OpenCV camera (Y-down, Z-fwd) → GL camera (Y-up, Z-back)
 //   position'    = frameChange · position
@@ -462,6 +537,9 @@ export class ViroArSession {
 
   private bgTexture = 0; // current camera-feed texture handle (0 = none)
   private playbackIndex = -1;
+  // The camera handed to the renderer, kept so hitTest can unproject through
+  // the same frustum the renderer projects with. Null until start().
+  private appliedIntrinsics: { intr: SlamIntrinsics; width: number; height: number } | null = null;
 
   // Latest camera pose in virocore (Y-up) world space, for hit-testing.
   private lastCamPos: Vec3 = [0, 0, 0];
@@ -476,9 +554,15 @@ export class ViroArSession {
   }
 
   /**
-   * Requests camera/IMU access, boots slam, and starts injecting poses.
+   * Requests camera/IMU access, boots the tracker, and starts injecting poses.
    * DeviceMotion permission (iOS Safari) must already be granted by the caller
    * from a user gesture; see ViroARSceneNavigator.
+   *
+   * Rejects if it cannot start, after calling `onError`. Both happen: `onError`
+   * is where a UI shows the reason, and the rejection is what stops an `await
+   * session.start()` from continuing as though a session existed. This used to
+   * resolve either way on the live path — a denied camera then looked, to
+   * everything downstream, exactly like a granted one.
    */
   async start(): Promise<void> {
     if (this.opts.playback) {
@@ -570,12 +654,14 @@ export class ViroArSession {
       this.running = true;
       this.loop();
     } catch (err) {
-      this.opts.onError?.(err instanceof Error ? err : new Error(String(err)));
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.opts.onError?.(error);
       this.stop();
+      throw error;
     }
   }
 
-  /** Stops capture, releases the camera, and tears down slam. */
+  /** Stops capture, releases the camera, and tears down the tracker. */
   stop(): void {
     this.running = false;
     if (this.rafId) {
@@ -618,13 +704,14 @@ export class ViroArSession {
     this.ctx = null;
     this.planeSnapshot.clear();
     this.lastPlanes = [];
+    this.appliedIntrinsics = null;
   }
 
   private async resolveSlamFactory(): Promise<SlamWasmFactory> {
     const loaded = await this.opts.loadSlam();
     if (typeof loaded === "function") return loaded;
     if (loaded && typeof loaded.default === "function") return loaded.default;
-    throw new Error("loadSlam did not resolve to a slam-wasm factory");
+    throw new Error("loadSlam did not resolve to a tracking-engine factory");
   }
 
   /**
@@ -642,6 +729,10 @@ export class ViroArSession {
     const applied = this.opts.sceneApi.arSetCameraIntrinsics(
       intr.fx, intr.fy, intr.cx, intr.cy, width, height,
     );
+    // Only when the renderer took them. On the fallback path it is projecting
+    // through its assumed 60 degrees, and hitTest has to assume the same thing
+    // or the two disagree in the opposite direction.
+    this.appliedIntrinsics = applied ? { intr, width, height } : null;
     if (!applied) {
       this.opts.onError?.(
         new Error(
@@ -790,11 +881,32 @@ export class ViroArSession {
     const frame = src.frames[index];
     if (!frame) return false;
 
-    await new Promise<void>((resolve) => {
-      const done = () => { video.removeEventListener("seeked", done); resolve(); };
-      video.addEventListener("seeked", done);
-      video.currentTime = frame.t;
-    });
+    // Wait for the decoder, but only when there is something to wait for.
+    // Assigning currentTime the value it already holds is not guaranteed to
+    // produce a `seeked` — a recording with two frames at the same timestamp,
+    // or a caller re-rendering the frame it just rendered, would then wait for
+    // an event that never arrives and hang the whole replay. An `error` is the
+    // other way this never resolves, so it ends the wait too.
+    const alreadyThere =
+      Math.abs(video.currentTime - frame.t) < 1e-6 &&
+      video.readyState >= video.HAVE_CURRENT_DATA;
+    if (!alreadyThere) {
+      await new Promise<void>((resolve, reject) => {
+        const done = () => {
+          video.removeEventListener("seeked", done);
+          video.removeEventListener("error", failed);
+          resolve();
+        };
+        const failed = () => {
+          video.removeEventListener("seeked", done);
+          video.removeEventListener("error", failed);
+          reject(new Error(`playback: decoding failed while seeking to ${frame.t}s`));
+        };
+        video.addEventListener("seeked", done);
+        video.addEventListener("error", failed);
+        video.currentTime = frame.t;
+      });
+    }
 
     const w = canvas.width;
     const h = canvas.height;
@@ -872,7 +984,7 @@ export class ViroArSession {
     this.opts.onStatus?.(state, engine.trackingQuality());
 
     // The renderer only draws the scene when tracking is Normal. Without an IMU
-    // (desktop) slam never leaves Limited, so `renderWhileLimited` forces Normal
+    // (desktop) the tracker never leaves Limited, so `renderWhileLimited` forces Normal
     // into the renderer (real state still goes to onStatus) — a dev/preview aid.
     const injectedState =
       this.opts.renderWhileLimited && state !== ViroTrackingState.Normal
@@ -897,7 +1009,7 @@ export class ViroArSession {
   }
 
   /**
-   * Fetch slam planes, convert to virocore (Y-up) space, and fire
+   * Fetch the tracker's planes, convert to virocore (Y-up) space, and fire
    * onAnchorsUpdated when the set changes (added/removed/moved beyond epsilon).
    */
   private emitPlanes(): void {
@@ -961,18 +1073,74 @@ export class ViroArSession {
   }
 
   /**
+   * The half-extents of the render frustum at unit depth, as VROARCameraWeb
+   * builds them (VROARWeb.cpp::getProjection).
+   *
+   * This has to track that function rather than assume anything, because the
+   * two are the same frustum seen from two sides: the renderer projects world
+   * points onto the screen with it, and a hit test unprojects a screen point
+   * back out through it. A ray built from a different frustum than the one that
+   * drew the frame lands somewhere the user did not tap -- and the error is
+   * smallest at the centre, which is exactly where it gets tested by hand and
+   * looks fine.
+   *
+   * Until intrinsics existed both sides assumed a fixed 60-degree vertical
+   * field of view and agreed by construction. They no longer do: the renderer
+   * uses the real camera whenever ViroArSession has supplied one, which is
+   * always. On the 640x480 default that is a 55.6-degree camera, so the old
+   * assumption put every ray about 8% wide, plus a constant offset for the
+   * principal point it ignored entirely.
+   */
+  private frustumAt(
+    viewportW: number,
+    viewportH: number,
+  ): { l: number; r: number; t: number; b: number } {
+    const aspect = viewportH > 0 ? viewportW / viewportH : 1;
+    const i = this.appliedIntrinsics;
+
+    let l: number, r: number, t: number, b: number;
+    if (i && i.width > 0 && i.height > 0) {
+      l = i.intr.cx / i.intr.fx;
+      r = (i.width - i.intr.cx) / i.intr.fx;
+      t = i.intr.cy / i.intr.fy;
+      b = (i.height - i.intr.cy) / i.intr.fy;
+    } else {
+      // The same fallback the renderer takes when it has no intrinsics.
+      t = b = Math.tan((30 * Math.PI) / 180);
+      l = r = t * aspect;
+    }
+
+    // The viewport rarely has the image's aspect ratio, so the renderer widens
+    // the axis with room to spare instead of stretching. Off-axis too, which is
+    // why this splits the total in proportion rather than halving it.
+    const imageAspect = (r + l) / (t + b);
+    if (aspect > imageAspect) {
+      const total = (t + b) * aspect;
+      const lr = l + r;
+      l = total * (l / lr);
+      r = total * (r / lr);
+    } else {
+      const total = (l + r) / aspect;
+      const tb = t + b;
+      t = total * (t / tb);
+      b = total * (b / tb);
+    }
+    return { l, r, t, b };
+  }
+
+  /**
    * Cast a ray from the camera through a screen point and intersect the detected
    * planes. Returns hits sorted nearest-first (virocore Y-up world space).
    * viewport dims are in the same pixels as screenX/screenY (top-left origin).
    */
   hitTest(screenX: number, screenY: number, viewportW: number, viewportH: number): ArHitResult[] {
-    // Match VROARCameraWeb::getProjection: 60° vertical FOV, aspect from viewport.
-    const aspect = viewportH > 0 ? viewportW / viewportH : 1;
-    const tanV = Math.tan((30 * Math.PI) / 180);
-    const tanH = tanV * aspect;
-    const ndcX = (screenX / viewportW) * 2 - 1;
-    const ndcY = 1 - (screenY / viewportH) * 2;
-    const dirCam: Vec3 = [ndcX * tanH, ndcY * tanV, -1];
+    const f = this.frustumAt(viewportW, viewportH);
+    // Off-axis, so the mapping is edge-to-edge rather than about a centre that
+    // a real camera does not have: u=0 lands on the left half-extent, u=1 on
+    // the right. With l==r and t==b this reduces to the symmetric ndc form.
+    const u = viewportW > 0 ? screenX / viewportW : 0.5;
+    const v = viewportH > 0 ? screenY / viewportH : 0.5;
+    const dirCam: Vec3 = [-f.l + u * (f.l + f.r), f.t - v * (f.t + f.b), -1];
     const dir = normalize(quatRotateVec(this.lastCamQuat, dirCam));
     const origin = this.lastCamPos;
 
