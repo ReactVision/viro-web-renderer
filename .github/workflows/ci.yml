@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [feat-web-platform, main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Type errors are the failure this catches that the tests cannot: the
+      # published .d.ts is the package's contract, and nothing else checks it.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      # The WASM binaries are built from virocore, a separate repository, and are
+      # not in git. The suite reports and skips the checks that need them; what
+      # runs here is the hitTest round trip and the public surface. The binary
+      # checks are not optional at publish time -- prepublishOnly sets
+      # VIRO_REQUIRE_WASM after copying them in, which turns the skip into a
+      # failure.
+      - name: Test
+        run: npm test
+
+      - name: Pack
+        run: npm pack --dry-run
