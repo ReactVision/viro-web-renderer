@@ -2,13 +2,11 @@
 
 WebAssembly + WebGL2 build of the Viro renderer (`virocore`) for the web
 platform. This package ships the compiled `.wasm` module, its Emscripten glue,
-and a small typed loader / init API. It is consumed by the Viro web bridge
-(`react-native-web` layer) in Phase 2.
+and a typed loader, scene API and AR session on top.
 
-> Status: **Phase 3.** Ships the typed scene C API (`ViroSceneApi`) driven by the
-> Viro web bridge, plus `ViroArSession` for web AR (camera + 6-DoF pose + plane
-> detection via slam-wasm). A `viroBuildDemoCube()` smoke-test scene is still
-> available.
+It is what [`@reactvision/react-viro`](https://github.com/ReactVision/viro)
+renders through on the web. You can also drive it directly, which is what the
+rest of this document is about.
 
 ## Install
 
@@ -31,50 +29,42 @@ window.addEventListener("resize", () => renderer.resize());
 The canvas must be in the document at `create()` time — the WebGL2 context is
 created C-side from a CSS selector. If the canvas has no `id`, one is assigned.
 
+`create()` gives you an empty scene; build into it through `renderer.scene`.
+
+```ts
+const s = renderer.scene;
+const material = s.createMaterial();
+s.setMaterialDiffuseColor(material, 0.2, 0.6, 1.0, 1.0);
+
+const box = s.createBox(2, 2, 2);
+s.setGeometryMaterial(box, material);
+
+const node = s.createNode();
+s.setNodeGeometry(node, box);
+s.setNodePosition(node, 0, 0, -5);
+s.addChildNode(s.getRootNode(), node);
+```
+
 ### API
 
 - `ViroWebRenderer.create(options)` → `Promise<ViroWebRenderer>`
   - `options.canvas`: `HTMLCanvasElement | string` (element or CSS selector)
   - `options.width?`, `options.height?`: backing-store size in device pixels
     (defaults to CSS size × `devicePixelRatio`)
-  - `options.locateFile?`: override `.wasm`/`.data` URL resolution (bundler use)
+  - `options.locateFile?`, `options.assetBaseUrl?`, `options.importGlue?`:
+    where the WASM assets are — see [Bundler integration](#bundler-integration)
+- `renderer.scene` — `ViroSceneApi`, the handle-based scene graph
 - `renderer.resize(width?, height?)` — resize the viewport
-- `renderer.canvasElement` — the bound canvas
-- `renderer.wasmModule` — the raw Emscripten module (escape hatch)
-- `loadViroWebModule(canvas, locateFile?)` — low-level module loader
+- `renderer.loadModel(node, bytes, format, resources?)` — GLB / glTF / VRX
+- `renderer.loadLightingEnvironment(url)` — radiance `.hdr` as an IBL environment
+- `renderer.canvasElement`, `renderer.wasmModule` — the bound canvas, and the
+  raw Emscripten module as an escape hatch
+- `loadViroWebModule(canvas, opts?)` — low-level module loader
 
-## How the WASM is built
-
-The `.wasm` / glue are produced from `virocore/wasm` (see that repo's
-`MIGRATION.md`), then copied into this package:
-
-```sh
-cd ../virocore/wasm && ./build_web.sh      # produces products/build/viro-web.*
-cd ../../viro-web-renderer
-npm run copy-wasm                          # copies artifacts into ./wasm
-npm run build                              # tsc -> dist
-```
-
-`npm run copy-wasm` reads from `../virocore/wasm/products/build` by default;
-override with `VIRO_WASM_BUILD=/path npm run copy-wasm`.
-
-## Try the example
-
-```sh
-npm run build && npm run copy-wasm
-python3 -m http.server 8080
-# open http://localhost:8080/example/
-```
-
-## Publishing (manual, Phase 1)
-
-```sh
-npm run copy-wasm && npm run build
-npm publish --access public
-```
-
-`dist/` and `wasm/` are shipped (see `files` in `package.json`); both are
-git-ignored and regenerated from source.
+**Known limitation:** `dispose()` releases references and detaches input, but
+the WASM main loop cannot be stopped from the C API yet, so a disposed renderer
+keeps drawing. Create one renderer and keep it rather than mounting and
+unmounting repeatedly.
 
 ## Bundler integration
 
@@ -84,8 +74,7 @@ Three things a consumer's bundler must handle to run the Viro web bridge:
 2. **`react-native` → `react-native-web`** alias.
 3. **The WASM assets** — `viro-web.js` (glue), `viro-web.wasm`, `viro-web.data`
    must be reachable at runtime. How you point the renderer at them depends on
-   the bundler (see `ViroWebRendererOptions`: `importGlue`, `assetBaseUrl`,
-   `locateFile`).
+   the bundler.
 
 **No cross-origin isolation needed.** This build is single-threaded (no pthreads),
 so `SharedArrayBuffer` and COOP/COEP headers are **not** required.
@@ -155,12 +144,40 @@ and set `assetBaseUrl` to that directory. Metro's asset pipeline for arbitrary
 
 ## AR (`ViroArSession`)
 
-Web AR is driven by a second WASM module, [tinyvio](../tinyvio), which does the
-6-DoF tracking + plane detection. This package provides `ViroArSession`: it
-captures the camera + IMU, feeds slam, converts the pose from slam's Z-up/OpenCV
-frame to virocore's Y-up/GL frame, and injects it into the renderer via the AR
-scene API (`ViroSceneApi.arSet*`). Most apps use it indirectly through the Viro
-bridge's `ViroARSceneNavigator.web`; the low-level API is here for custom hosts.
+Web AR needs a second WASM module. The renderer does not track — it draws the
+scene from a pose someone else computed. That someone is
+[tinyvio](https://github.com/ReactVision/tinyvio), which does the 6-DoF tracking
+and plane detection.
+
+`ViroArSession` is the part in between: it captures the camera and IMU, feeds
+the tracker, converts the pose from the tracker's Z-up/OpenCV frame into
+virocore's Y-up/GL frame, and injects it through the AR scene API. Most apps get
+this through the bridge's `ViroARSceneNavigator.web`; the low-level API is here
+for custom hosts.
+
+### Getting the tracking engine
+
+tinyvio is not on npm. Build it and host the two files yourself:
+
+```sh
+git clone https://github.com/ReactVision/tinyvio && cd tinyvio
+source "$EMSDK/emsdk_env.sh"
+./scripts/build_slam_wasm.sh          # -> web/slam/tinyvio-slam.{js,wasm}
+cp web/slam/tinyvio-slam.* /path/to/your/app/public/
+```
+
+That is 260 KB of WASM plus 41 KB of glue. It is built with `MODULARIZE` but
+deliberately **without** `EXPORT_ES6`: load it as a classic `<script>`, which
+leaves a `SlamModule` factory on `globalThis`. There is no ES-module build, so
+`loadSlam` is where you adapt whatever you have into a factory.
+
+> The `Slam*` names throughout this package are the name of a C API, not of the
+> engine behind it. tinyvio replaced an earlier tracker and kept that API on
+> purpose so nothing written against it had to change.
+
+```html
+<script src="/tinyvio-slam.js"></script>
+```
 
 ```ts
 import { ViroWebRenderer, ViroArSession } from "@reactvision/viro-web-renderer";
@@ -169,17 +186,56 @@ const renderer = await ViroWebRenderer.create({ canvas });
 
 const session = new ViroArSession({
   sceneApi: renderer.scene,
-  // slam-wasm factory. With the classic <script> build: () => globalThis.SlamModule
-  loadSlam: () => import("/slam_wasm.mjs"),
+  loadSlam: () => globalThis.SlamModule,
   detectPlanes: true,
   onStatus: (state, quality) => {/* 1 Unavailable / 2 Limited / 3 Normal */},
   onAnchorsUpdated: (planes) => {/* ArPlaneAnchor[] in Y-up world space */},
+  onError: (err) => {/* shown to the user */},
 });
 
 await session.start();               // needs a user gesture (camera + iOS motion perm)
 const hits = session.hitTest(x, y, canvas.width, canvas.height); // ray-vs-plane
-session.stop();                      // releases camera + tears down slam
+session.stop();                      // releases camera + tears down the tracker
 ```
+
+Through the bridge, pass `slamScriptUrl="/tinyvio-slam.js"` to
+`ViroARSceneNavigator` and it does the script injection for you.
+
+`start()` **rejects** when it cannot start, after calling `onError`. Both
+happen: `onError` is where a UI shows the reason, and the rejection is what
+stops an `await session.start()` from continuing as though a session existed.
+
+The camera feed, pose tracking and plane detection all require **HTTPS** and a
+device with an IMU. `requestDeviceMotionPermission()` is exported to request iOS
+Safari's DeviceMotion permission from a tap.
+
+### What the tracking state does and does not tell you
+
+`onStatus` reports virocore's three values, which are coarser than what tinyvio
+knows. A `Normal` can be a pose that is six-degree-of-freedom but not yet
+metric: content placed by `hitTest` is right, content placed at "1.5 metres" is
+not. tinyvio exposes that as `poseConfidence`, and whether a reported ground
+plane was detected or assumed as `groundIsEstimated`. **Neither is surfaced by
+this package yet.** Until they are, read `Normal` as "drawing is reasonable",
+not as "the world is measured".
+
+Two more things worth knowing before you rely on a number:
+
+- **`ArPlaneAnchor.width`/`height` are a bounding box.** tinyvio detects a
+  boundary polygon; the C API carries only a centre and two extents, so the
+  polygon is reduced on the way here. The box is never smaller than the surface
+  and on a room-sized floor can be noticeably larger — fine for placing an
+  object on, misleading if you draw it.
+- **Five of the eight `SlamTuning` knobs do nothing.** tinyvio is
+  keyframe-and-bundle-adjustment rather than a filter, so the IMU noise
+  densities have no counterpart and are accepted and ignored; `lostRecovery` is
+  not read at all. `fastThreshold`, `lostThreshold` and `lostGrace` do take
+  effect. The fields stay because the C API has them. Each is annotated in the
+  type.
+
+Supplying real `intrinsics` matters more than any of the tuning. Without them
+the session falls back to a measured guess (`f = 0.707 × long axis`), and the
+frustum, the tracking and the hit test are all built on it.
 
 ### Replaying a recording (`playback`)
 
@@ -195,7 +251,9 @@ const session = new ViroArSession({
   playback: {
     videoUrl: "/recording/video.mp4",
     frames: [{ t: 0.0, q: [0, 0, 0, 1], p: [0, 0, 0], tracked: true }, /* ... */],
-    planes: /* optional, per frame, already in Y-up world space */ undefined,
+    intrinsics: { fx: 1357.41, fy: 1357.41, cx: 960, cy: 720 },
+    intrinsicsSize: { width: 1920, height: 1440 },
+    intrinsicsRotation: -90,
   },
 });
 await session.start();
@@ -217,18 +275,67 @@ Three things worth knowing:
   is usually Z-up/OpenCV; the conversion the live path applies is `FRAME_Q` and
   `CAM_FLIP` in `arSession.ts`. Applying half of it produces a world that is
   almost right, which is the kind of bug that survives review.
-- **The AR subsystem is initialised the same way the live path does it**
-  (`initAR` + `arSetCameraImageSize`). Skipping either uploads the camera
-  background into a pipeline that is not expecting one and the scene composites
-  over black — a symptom that points at video decoding, which is not where it
-  is.
 - **`renderPlaybackFrame` awaits the decoder** before returning, so a caller can
   screenshot immediately after without racing it. A frame with
   `tracked: false` reports `Limited`, which hides the scene and leaves the
   camera feed alone — what a device does, and what an honest preview should
   show rather than drawing content against a pose that does not exist.
 
-`requestDeviceMotionPermission()` is exported to request iOS Safari's DeviceMotion
-permission from a tap. The camera feed, pose tracking, and plane detection all
-require **HTTPS** and a device with an IMU. The internal Viro web docs (Usage, Integration,
-Internals) carry the full AR guides.
+## Building the WASM
+
+The `.wasm` / glue are produced from `virocore/wasm`, then copied into this
+package:
+
+```sh
+cd ../virocore/wasm && ./build_web.sh      # produces products/build/viro-web.*
+cd ../../viro-web-renderer
+npm run copy-wasm                          # copies artifacts into ./wasm
+npm run build                              # tsc -> dist
+npm test
+```
+
+`npm run copy-wasm` reads from `../virocore/wasm/products/build` by default;
+override with `VIRO_WASM_BUILD=/path npm run copy-wasm`.
+
+`dist/` and `wasm/` are both git-ignored and regenerated from source, and both
+are shipped to npm (see `files` in `package.json`). `prepublishOnly` rebuilds
+and re-copies them, so a publish from a clean clone cannot ship a package
+without a renderer in it.
+
+## Try the example
+
+```sh
+npm run build && npm run copy-wasm
+python3 -m http.server 8080
+# open http://localhost:8080/example/
+```
+
+## Tests
+
+```sh
+npm test
+```
+
+`test/hitTest.test.mjs` round-trips a point through the projection and back out
+through `hitTest`, which is the property that broke when the renderer started
+using real camera intrinsics. `test/package.test.mjs` checks the tarball's
+invariants: the public exports load, every binding `types.ts` declares exists in
+the shipped binary, and nothing in the payload is someone else's to
+redistribute.
+
+## Licensing
+
+This package is MIT (`LICENSE`). The shipped binaries contain libjpeg, FreeType,
+Bullet, protobuf-lite, zlib, SDL2 and the Emscripten runtime, and the preloaded
+font is DejaVu Sans — all permissive, all with their notices in
+[`THIRD-PARTY-LICENSES.md`](./THIRD-PARTY-LICENSES.md). If you copy the three
+`wasm/` files to a CDN, that file is the notice you need to keep with them; the
+font's own licence is preloaded inside `viro-web.data` beside it.
+
+## Module format
+
+ESM only. `main`, `module` and `types` all point at `dist/`, and there is no
+CommonJS build — `require()` will not work. Deep imports
+(`@reactvision/viro-web-renderer/wasm/viro-web.wasm`) are supported and are how
+the bundler recipes above reach the assets; there is deliberately no `exports`
+map, because adding one would break them.
