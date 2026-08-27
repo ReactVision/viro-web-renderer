@@ -1,18 +1,24 @@
 {
   "name": "@reactvision/viro-web-renderer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "WebAssembly/WebGL2 build of the Viro renderer (virocore) for the web platform",
   "license": "MIT",
+  "author": "ReactVision",
+  "homepage": "https://github.com/ReactVision/viro-web-renderer#readme",
+  "bugs": {
+    "url": "https://github.com/ReactVision/viro-web-renderer/issues"
+  },
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "publishConfig": {
+    "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/ReactVision/viro-web-renderer.git"
+    "url": "git+https://github.com/ReactVision/viro-web-renderer.git"
   },
   "keywords": [
     "viro",
@@ -25,17 +31,25 @@
   ],
   "files": [
     "dist",
-    "wasm"
+    "wasm",
+    "LICENSE",
+    "THIRD-PARTY-LICENSES.md",
+    "CHANGELOG.md"
   ],
   "sideEffects": [
     "*.wasm",
     "*.data"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "copy-wasm": "bash scripts/copy-wasm.sh",
     "build": "tsc",
+    "test": "node test/hitTest.test.mjs && node test/package.test.mjs",
     "clean": "rm -rf dist *.tgz",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run copy-wasm && npm run build && npm test"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
