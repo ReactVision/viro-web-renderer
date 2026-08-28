@@ -24,7 +24,7 @@ MIT licensed and free forever.
 
 > **Used automatically by [`@reactvision/react-viro`](https://www.npmjs.com/package/@reactvision/react-viro) on the web** — install it alongside the core package and the web navigators pick it up. You can also drive it directly, which is what the rest of this document covers.
 
-> **Web AR needs a second module.** Pose tracking and plane detection come from tinyvio, ReactVision's visual-inertial tracker, which is not yet distributed publicly — see [AR](#ar-viroarsession). 3D scenes need nothing beyond this package.
+> **Web AR is included.** Pose tracking and plane detection come from [tinyvio](https://github.com/ReactVision/tinyvio), ReactVision's visual-inertial tracker, and this package ships it — 260 KB of WASM under `slam/`. Nothing else to install or host.
 
 ## Supported Browsers
 
@@ -165,31 +165,30 @@ Then serve the three files from a known path — copy them to the app's `public/
 
 Web AR needs a second WASM module. The renderer draws the scene from a pose someone else computed; that someone is tinyvio, ReactVision's visual-inertial tracker, which does the 6-DoF tracking and plane detection. Most apps get this through the bridge's `ViroARSceneNavigator` on web; the low-level API below is for custom hosts.
 
-### Getting the tracking engine
+### The tracking engine
 
-> **tinyvio is not yet distributed publicly.** It is not on npm, and its
-> repository is private while the team settles how it ships. If you need web AR
-> today, ask us on [Discord](https://discord.gg/A6TaFNqwVc) or through
-> <https://reactvision.xyz/contact> and we will get you the build. Everything
-> else in this package — 3D scenes, models, materials, animation, the whole
-> `ViroSceneApi` — works with no second module and no camera.
+The engine is [tinyvio](https://github.com/ReactVision/tinyvio), and it ships in
+this package under `slam/`. `ViroArSession` loads it on `start()` with no
+configuration: there is nothing to install, nothing to host, and no second
+repository to clone.
 
-The engine is two files, `tinyvio-slam.js` and `tinyvio-slam.wasm`, which you
-serve from your own app. With access to the repository they are built with:
+It is not an ES module — tinyvio builds it deliberately as a classic script that
+leaves a `SlamModule` factory behind — so the session injects a `<script>` tag
+rather than importing it. That matters in one case: if your bundler moves the
+files, tell the session where they went.
 
-```bash
-source "$EMSDK/emsdk_env.sh"
-./scripts/build_slam_wasm.sh          # -> web/slam/tinyvio-slam.{js,wasm}
-cp web/slam/tinyvio-slam.* /path/to/your/app/public/
+```ts
+// only if the two files are not where the package put them
+new ViroArSession({ sceneApi, slamBaseUrl: "/assets/tinyvio/" });
+// or globally: globalThis.VIRO_SLAM_ASSET_BASE = "/assets/tinyvio/";
 ```
 
-That is 260 KB of WASM plus 41 KB of glue. It is built with `MODULARIZE` but deliberately **without** `EXPORT_ES6`: load it as a classic `<script>`, which leaves a `SlamModule` factory on `globalThis`. There is no ES-module build, so `loadSlam` is where you adapt whatever you have into a factory.
+To run a different build entirely — one you compiled, or one you already loaded
+— pass `loadSlam` and the bundled copy is left alone.
 
-> **The `Slam*` names are the name of a C API, not of the engine behind it.** tinyvio replaced an earlier tracker and kept that API on purpose, so nothing written against it had to change.
-
-```html
-<script src="/tinyvio-slam.js"></script>
-```
+> **The `Slam*` names are the name of a C API, not of the engine behind it.**
+> tinyvio replaced an earlier tracker and kept that API on purpose, so nothing
+> written against it had to change.
 
 ```ts
 import { ViroWebRenderer, ViroArSession } from "@reactvision/viro-web-renderer";
@@ -198,7 +197,6 @@ const renderer = await ViroWebRenderer.create({ canvas });
 
 const session = new ViroArSession({
   sceneApi: renderer.scene,
-  loadSlam: () => globalThis.SlamModule,
   detectPlanes: true,
   onStatus: (state, quality) => {/* 1 Unavailable / 2 Limited / 3 Normal */},
   onAnchorsUpdated: (planes) => {/* ArPlaneAnchor[] in Y-up world space */},
@@ -262,9 +260,11 @@ The `.wasm` and glue are produced from `virocore/wasm`, then copied into this pa
 
 ```bash
 cd ../virocore/wasm && ./build_web.sh   # produces products/build/viro-web.*
-cd ../../viro-web-renderer
-npm run copy-wasm                       # copies artifacts into ./wasm
-npm run build                           # tsc -> dist
+cd ../tinyvio && ./scripts/build_slam_wasm.sh   # produces web/slam/tinyvio-slam.*
+cd ../viro-web-renderer
+npm run copy-wasm                       # renderer  -> ./wasm
+npm run copy-slam                       # tracker   -> ./slam
+npm run build                           # tsc       -> ./dist
 npm test
 ```
 
@@ -273,7 +273,7 @@ npm test
 To try the example scene:
 
 ```bash
-npm run build && npm run copy-wasm
+npm run build && npm run copy-wasm && npm run copy-slam
 python3 -m http.server 8080
 # open http://localhost:8080/example/
 ```
@@ -282,7 +282,7 @@ python3 -m http.server 8080
 
 ## Licensing
 
-This package is MIT. The shipped binaries statically link libjpeg, FreeType, Bullet, protobuf-lite, zlib, SDL2 and the Emscripten runtime — all permissive, all with their notices in [`THIRD-PARTY-LICENSES.md`](./THIRD-PARTY-LICENSES.md). If you copy the three `wasm/` files to a CDN, that file is the notice to keep with them.
+This package is MIT, and so is the bundled tracking engine ([tinyvio](https://github.com/ReactVision/tinyvio), also ReactVision's). The renderer binaries statically link libjpeg, FreeType, Bullet, protobuf-lite, zlib, SDL2 and the Emscripten runtime — all permissive, all with their notices in [`THIRD-PARTY-LICENSES.md`](./THIRD-PARTY-LICENSES.md). If you copy the binaries to a CDN, that file is the notice to keep with them.
 
 ## Documentation
 

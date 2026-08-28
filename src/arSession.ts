@@ -17,6 +17,7 @@
  * into React and handles the permission UX.
  */
 
+import { loadBundledSlam, slamLocateFile } from "./slamLoader.js";
 import type { ViroSceneApi } from "./sceneApi.js";
 import { ViroTrackingState } from "./sceneApi.js";
 
@@ -224,23 +225,26 @@ export interface ViroArSessionOptions {
   /** The renderer scene API to inject poses into. */
   sceneApi: ViroSceneApi;
   /**
-   * Loads the tracking engine's module factory. Kept pluggable so this package
-   * does not hard-depend on how the engine is packaged or served.
+   * Override how the tracking engine's module factory is obtained.
    *
-   * The engine is tinyvio's `tinyvio-slam.js`, built by its
-   * `scripts/build_slam_wasm.sh` (260 KB of WASM plus 41 KB of glue). It is not
-   * on npm; host the two files yourself. Because it is a classic script rather
-   * than an ES module, the usual form is:
+   * Optional. By default the engine bundled with this package is used — tinyvio,
+   * under `slam/` — so web AR needs nothing but an `npm install`. Supply this
+   * only to load the engine some other way: a different build, a version you
+   * host yourself, or a host with no DOM to inject a script into.
    *
-   *   loadSlam: () => globalThis.SlamModule   // after loading tinyvio-slam.js
-   *
-   * `ViroARSceneNavigator.web` does the script injection for you — pass it
-   * `slamScriptUrl` and it builds this callback.
+   *   loadSlam: () => globalThis.SlamModule   // an engine you loaded already
    */
-  loadSlam: () =>
+  loadSlam?: () =>
     | Promise<SlamWasmFactory | { default: SlamWasmFactory }>
     | SlamWasmFactory
     | { default: SlamWasmFactory };
+  /**
+   * Directory URL where `tinyvio-slam.js` and `tinyvio-slam.wasm` are served,
+   * when they are not the copy inside this package. Set this if your bundler
+   * rewrites `import.meta.url`, or if you serve the engine from `public/` or a
+   * CDN. Also settable globally via `globalThis.VIRO_SLAM_ASSET_BASE`.
+   */
+  slamBaseUrl?: string;
   /** Requested capture size (device may pick the nearest supported). Default 640x480. */
   captureWidth?: number;
   captureHeight?: number;
@@ -589,7 +593,10 @@ export class ViroArSession {
     }
     try {
       const factory = await this.resolveSlamFactory();
-      const module = await factory();
+      // Pin the .wasm to the same directory as the glue. Emscripten otherwise
+      // resolves it against the host page, which 404s the moment the engine is
+      // served from anywhere but the site root.
+      const module = await factory({ locateFile: slamLocateFile(this.opts.slamBaseUrl) });
       this.module = module;
       this.engine = new module.SlamEngine();
 
@@ -726,6 +733,7 @@ export class ViroArSession {
   }
 
   private async resolveSlamFactory(): Promise<SlamWasmFactory> {
+    if (!this.opts.loadSlam) return loadBundledSlam(this.opts.slamBaseUrl);
     const loaded = await this.opts.loadSlam();
     if (typeof loaded === "function") return loaded;
     if (loaded && typeof loaded.default === "function") return loaded.default;

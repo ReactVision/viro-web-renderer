@@ -6,6 +6,7 @@
 
 export { ViroWebRenderer } from "./ViroWebRenderer.js";
 export { loadViroWebModule } from "./loader.js";
+export { loadBundledSlam } from "./slamLoader.js";
 export {
   ViroSceneApi,
   ViroLightingModel,

@@ -1,0 +1,6 @@
+{
+  "name": "viro-web-renderer-slam",
+  "private": true,
+  "type": "commonjs",
+  "description": "Scopes this directory to CommonJS. The package root is \"type\": \"module\", but tinyvio-slam.js is built without EXPORT_ES6 -- it is a UMD/classic script that defines a SlamModule factory, which slamLoader.ts injects via a <script> tag. Without this file Node reads the glue as ESM and it cannot be required at all, which breaks the tests that drive the engine. Browsers never read it; a <script> tag does not consult package.json."
+}

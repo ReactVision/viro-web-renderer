@@ -7,3 +7,10 @@ dist/
 wasm/viro-web.js
 wasm/viro-web.wasm
 wasm/viro-web.data
+
+# The tinyvio tracking engine, copied in by scripts/copy-slam.sh. Same policy as
+# the renderer binaries above: build output of another repo, not tracked here,
+# but shipped to npm so web AR works from an install alone.
+slam/tinyvio-slam.js
+slam/tinyvio-slam.wasm
+# slam/package.json is NOT ignored: it scopes the dir to CommonJS and is source.

@@ -1,8 +1,10 @@
 # Third-party notices
 
 `@reactvision/viro-web-renderer` is MIT (see `LICENSE`). The package also ships
-two prebuilt binaries — `wasm/viro-web.wasm` and `wasm/viro-web.data` — that
-contain code from the projects below. Those projects' licences permit
+prebuilt binaries — `wasm/viro-web.*` and the tinyvio tracking engine under
+`slam/` — that contain code from the projects below. tinyvio is ReactVision's
+own and MIT-licensed, with no third-party code in its core; everything listed
+here is linked into the renderer. Those projects' licences permit
 redistribution and require that their notices travel with the binary, which is
 what this file is for.
 

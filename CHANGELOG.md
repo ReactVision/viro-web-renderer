@@ -14,6 +14,22 @@ Everything below happened between the last internal build and this publish, and
 is listed because someone tracking the package from inside will otherwise be
 surprised by it.
 
+### Added
+
+- **The tracking engine ships with the package.** Web AR needed a second WASM
+  module that every consumer had to obtain and host themselves, from a
+  repository most of them could not open. tinyvio is now bundled under `slam/`
+  (260 KB of WASM plus 41 KB of glue) and `ViroArSession` loads it on `start()`
+  with no configuration. `loadSlam` becomes optional; `slamBaseUrl` is there for
+  bundlers that move the files.
+
+- **`intrinsicsSize` on the live path.** A calibration is measured at the
+  sensor's full resolution and `getUserMedia` hands over something far smaller,
+  so the measured focal has to be scaled onto the delivered frame — 1920×1440
+  against a 640×480 capture is a focal three times too long, which misplaces
+  content and reads as a tracking fault rather than a unit mismatch. The
+  playback path already did this; the live path took the numbers as-is.
+
 ### Fixed
 
 - **`hitTest` unprojected through the wrong frustum.** It assumed a fixed

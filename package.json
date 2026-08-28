@@ -32,6 +32,7 @@
   "files": [
     "dist",
     "wasm",
+    "slam",
     "LICENSE",
     "THIRD-PARTY-LICENSES.md",
     "CHANGELOG.md"
@@ -49,7 +50,8 @@
     "test": "node test/hitTest.test.mjs && node test/package.test.mjs",
     "clean": "rm -rf dist *.tgz",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run copy-wasm && npm run build && VIRO_REQUIRE_WASM=1 npm test"
+    "prepublishOnly": "npm run copy-wasm && npm run copy-slam && npm run build && VIRO_REQUIRE_WASM=1 npm test",
+    "copy-slam": "bash scripts/copy-slam.sh"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
