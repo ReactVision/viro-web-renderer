@@ -261,6 +261,7 @@ export interface ViroWebModule {
   FS: {
     writeFile(path: string, data: Uint8Array | string): void;
     mkdirTree?(path: string): void;
+    mkdir?(path: string): void;
     unlink?(path: string): void;
   };
 

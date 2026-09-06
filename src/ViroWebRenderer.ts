@@ -13,6 +13,7 @@ const MODEL_EXT: Record<ViroModelFormat, string> = {
   [ViroModelFormat.GLB]: "glb",
   [ViroModelFormat.GLTF]: "gltf",
   [ViroModelFormat.VRX]: "vrx",
+  [ViroModelFormat.OBJ]: "obj",
 };
 
 let selectorCounter = 0;
@@ -118,9 +119,28 @@ export class ViroWebRenderer {
   }
 
   /**
-   * Load a model (GLB/glTF/VRX) into a node handle. Writes the bytes to the
+   * mkdirTree is idempotent; mkdir is not and throws EEXIST on the second load
+   * into the same node, which is a normal thing for a scene to do.
+   */
+  private mkdirIfMissing(dir: string): void {
+    if (this.module.FS.mkdirTree) {
+      this.module.FS.mkdirTree(dir);
+      return;
+    }
+    try {
+      this.module.FS.mkdir?.(dir);
+    } catch {
+      // Already there.
+    }
+  }
+
+  /**
+   * Load a model (GLB/glTF/VRX/OBJ) into a node handle. Writes the bytes to the
    * WASM virtual FS, then invokes the native loader. Resolves when the loader
    * finishes (texture hydration continues asynchronously afterward).
+   *
+   * `resources` are the files the model references by name — an OBJ's .mtl and
+   * the textures that .mtl names, or a VRX's PNGs.
    */
   loadModel(
     nodeHandle: ViroHandle,
@@ -128,12 +148,20 @@ export class ViroWebRenderer {
     format: ViroModelFormat,
     resources: Array<{ name: string; bytes: Uint8Array }> = [],
   ): Promise<boolean> {
-    // External resources (e.g. a VRX's PNG textures) must be written to the FS
-    // under the names the model references, so the loader resolves them.
-    for (const res of resources) {
-      this.module.FS.writeFile(`/${res.name}`, res.bytes);
+    // OBJ resolves its .mtl and textures against the directory the .obj sits in,
+    // so it gets one of its own. The shared root would resolve too, but there two
+    // models that both reference "wood.png" overwrite each other.
+    const dir = format === ViroModelFormat.OBJ ? `/viro_model_${nodeHandle}` : "";
+    if (dir) {
+      this.mkdirIfMissing(dir);
     }
-    const path = `/viro_model_${nodeHandle}.${MODEL_EXT[format]}`;
+
+    // External resources must be written under the names the model references,
+    // so the loader resolves them.
+    for (const res of resources) {
+      this.module.FS.writeFile(`${dir}/${res.name}`, res.bytes);
+    }
+    const path = `${dir}/viro_model_${nodeHandle}.${MODEL_EXT[format]}`;
     this.module.FS.writeFile(path, bytes);
     return new Promise<boolean>((resolve) => {
       // One resolver per node, and a second load replaces the first. Settle the

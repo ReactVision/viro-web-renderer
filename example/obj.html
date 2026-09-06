@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>viro-web-renderer — OBJ</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #14141a; color: #c9d1e0;
+                   font: 13px/1.5 -apple-system, system-ui, sans-serif; }
+      #wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; }
+      #viroCanvas { width: 90vw; max-width: 800px; aspect-ratio: 4 / 3; display: block;
+                    background: #000; touch-action: none; }
+      #status { min-height: 1.5em; }
+      #status.bad { color: #ff8f7a; }
+      #status.good { color: #7ad19a; }
+      p.note { max-width: 800px; color: #7f8ba3; margin: 0; }
+      code { color: #9fb3d1; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <canvas id="viroCanvas"></canvas>
+      <div id="status">loading…</div>
+      <p class="note">
+        A cube loaded from <code>assets/cube.obj</code>. OBJ is not self-contained: the
+        <code>.mtl</code> it names, and the texture that <code>.mtl</code> names, are passed
+        as <code>resources</code> and matched by basename. Four sides should show an
+        orange/blue checker, the top and bottom a flat orange — if every face is the same
+        untextured colour the texture did not resolve, and if the cube is uniformly lit with
+        no bright and dark faces the lighting did not.
+      </p>
+    </div>
+
+    <!-- Serve the package root over http(s):
+           cd .. && python3 -m http.server 8080
+           open http://localhost:8080/example/obj.html -->
+    <script type="module">
+      import { ViroWebRenderer, ViroModelFormat, ViroLightType } from "../dist/index.js";
+
+      const status = document.getElementById("status");
+      const say = (msg, cls) => { status.textContent = msg; status.className = cls ?? ""; };
+
+      const bytesOf = async (url) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${url} → ${res.status}`);
+        return new Uint8Array(await res.arrayBuffer());
+      };
+
+      try {
+        const renderer = await ViroWebRenderer.create({
+          canvas: document.getElementById("viroCanvas"),
+        });
+        const s = renderer.scene;
+        const root = s.getRootNode();
+
+        // Two lights, because an OBJ's MTL describes how a surface responds to
+        // light and says nothing about the light itself. Without them the
+        // materials below have nothing to shade against.
+        const ambient = s.createLight(ViroLightType.Ambient);
+        s.setLightColor(ambient, 1, 1, 1);
+        // Kept low on purpose: a strong ambient flattens the directional light's
+        // contribution and the example stops showing whether shading works.
+        s.setLightIntensity(ambient, 120);
+        s.addLightToNode(root, ambient);
+
+        const key = s.createLight(ViroLightType.Directional);
+        s.setLightColor(key, 1, 1, 1);
+        s.setLightIntensity(key, 1000);
+        s.setLightDirection(key, -0.4, -0.6, -0.7);
+        s.addLightToNode(root, key);
+
+        const node = s.createNode();
+        s.setNodePosition(node, 0, 0, -3.2);
+        s.addChildNode(root, node);
+
+        say("fetching model…");
+        const [obj, mtl, tex] = await Promise.all([
+          bytesOf("./assets/cube.obj"),
+          bytesOf("./assets/cube.mtl"),
+          bytesOf("./assets/checker.png"),
+        ]);
+
+        say("loading OBJ…");
+        const ok = await renderer.loadModel(node, obj, ViroModelFormat.OBJ, [
+          { name: "cube.mtl", bytes: mtl },
+          { name: "checker.png", bytes: tex },
+        ]);
+
+        if (!ok) {
+          say("OBJ load reported failure — see the console for the loader output", "bad");
+        } else {
+          say("OBJ loaded", "good");
+          // setNodeRotation takes Euler radians, not degrees.
+          let angle = 0;
+          setInterval(() => {
+            angle += 0.012;
+            s.setNodeRotation(node, 0.35, angle, 0);
+          }, 16);
+        }
+
+        window.addEventListener("resize", () => renderer.resize());
+      } catch (err) {
+        say("failed: " + err, "bad");
+        console.error(err);
+      }
+    </script>
+  </body>
+</html>

@@ -119,6 +119,8 @@ export enum ViroModelFormat {
   GLB = 0,
   GLTF = 1,
   VRX = 2,
+  /** Needs its companion .mtl (and any textures it names) passed as resources. */
+  OBJ = 3,
 }
 
 /** Mirrors VROLightType (VROLight.h). */

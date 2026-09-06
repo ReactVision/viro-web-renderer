@@ -1,0 +1,19 @@
+# Two materials so the example covers both branches of the MTL path:
+# one that names an external texture, one that is colour only.
+
+newmtl checker
+Ka 0.10 0.10 0.10
+Kd 1.00 1.00 1.00
+Ks 0.30 0.30 0.30
+Ns 40.0
+d 1.0
+illum 2
+map_Kd checker.png
+
+newmtl plain
+Ka 0.05 0.05 0.05
+Kd 0.85 0.35 0.20
+Ks 0.40 0.40 0.40
+Ns 60.0
+d 1.0
+illum 2
