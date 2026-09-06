@@ -540,6 +540,26 @@ export class ViroSceneApi {
   setActiveCameraNode(node: ViroHandle): void {
     this.m.viroSetActiveCameraNode(node);
   }
+  /**
+   * Returns false when the loaded wasm predates orthographic support, so a
+   * renderer built before it degrades to perspective instead of throwing on
+   * every camera mount. Same reasoning as arSetCameraIntrinsics below.
+   */
+  setCameraProjection(node: ViroHandle, projection: "perspective" | "orthographic"): boolean {
+    if (typeof this.m.viroSetCameraProjection !== "function") {
+      return false;
+    }
+    this.m.viroSetCameraProjection(node, projection === "orthographic" ? 1 : 0);
+    return true;
+  }
+  /** Full vertical height in world units; width follows the viewport aspect ratio. */
+  setCameraOrthographicScale(node: ViroHandle, scale: number): boolean {
+    if (typeof this.m.viroSetCameraOrthographicScale !== "function") {
+      return false;
+    }
+    this.m.viroSetCameraOrthographicScale(node, scale);
+    return true;
+  }
 
   // --- Model animations ---
   getAnimationKeys(node: ViroHandle): string[] {

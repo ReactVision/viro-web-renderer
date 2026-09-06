@@ -198,6 +198,12 @@ export interface ViroWebModule {
   // Camera.
   viroSetNodeCamera(node: number): void;
   viroSetActiveCameraNode(node: number): void;
+  /**
+   * projection: 0=perspective, 1=orthographic. Optional because a wasm built
+   * before orthographic support simply will not export these.
+   */
+  viroSetCameraProjection?(node: number, projection: number): void;
+  viroSetCameraOrthographicScale?(node: number, scale: number): void;
 
   // Model loading. The bridge writes the file to FS then calls viroLoadModel.
   // format: 0=GLB, 1=glTF, 2=VRX. Callback: (nodeHandle, success).
