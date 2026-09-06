@@ -90,11 +90,13 @@
           say("OBJ load reported failure — see the console for the loader output", "bad");
         } else {
           say("OBJ loaded", "good");
-          // setNodeRotation takes Euler radians, not degrees.
+          // setNodeRotation takes Euler radians, not degrees. The tilt is enough
+          // to keep the top face in view, so both of the MTL's materials — the
+          // textured one and the colour-only one — are visible at once.
           let angle = 0;
           setInterval(() => {
             angle += 0.012;
-            s.setNodeRotation(node, 0.35, angle, 0);
+            s.setNodeRotation(node, -0.55, angle, 0);
           }, 16);
         }
 
