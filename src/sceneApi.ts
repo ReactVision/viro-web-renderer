@@ -372,8 +372,16 @@ export class ViroSceneApi {
    * to the caller. Re-applying is safe — each call merges onto the materials the
    * node had before the first override, not onto the previous merge.
    */
-  applyShaderOverride(node: ViroHandle, material: ViroHandle): void {
+  applyShaderOverride(node: ViroHandle, material: ViroHandle): boolean {
+    // The binary is a build output of another repo and is routinely older than
+    // this file. Calling straight through would throw on a module that predates
+    // the export and take the whole scene down over a material; returning false
+    // leaves the model with its own materials, which is what it had anyway.
+    if (typeof this.m.viroApplyShaderOverride !== "function") {
+      return false;
+    }
     this.m.viroApplyShaderOverride(node, material);
+    return true;
   }
   destroyMaterial(material: ViroHandle): void {
     this.m.viroDestroyMaterial(material);
