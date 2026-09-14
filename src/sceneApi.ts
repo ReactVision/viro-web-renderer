@@ -360,6 +360,21 @@ export class ViroSceneApi {
   setMaterialShaderUniformTexture(material: ViroHandle, name: string, texture: ViroHandle): void {
     this.m.viroSetMaterialShaderUniformTexture(material, name, texture);
   }
+  /**
+   * Merge `material` onto everything `node` draws, itself and its whole subtree.
+   * The counterpart of the native bridges' `shaderOverrides` prop, with the same
+   * merge: each drawn material keeps its own colours and textures and takes the
+   * override's lighting model, shininess, blend mode, transparency mode, cull
+   * mode and two depth flags, plus its shader modifiers and uniforms.
+   *
+   * For a loaded model rather than a geometry built here: `setGeometryMaterial`
+   * needs a geometry handle, and a model's geometry belongs to the loader, not
+   * to the caller. Re-applying is safe — each call merges onto the materials the
+   * node had before the first override, not onto the previous merge.
+   */
+  applyShaderOverride(node: ViroHandle, material: ViroHandle): void {
+    this.m.viroApplyShaderOverride(node, material);
+  }
   destroyMaterial(material: ViroHandle): void {
     this.m.viroDestroyMaterial(material);
   }

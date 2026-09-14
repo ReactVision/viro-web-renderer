@@ -104,6 +104,8 @@ export interface ViroWebModule {
   viroSetMaterialShaderUniformMat4(material: number, name: string, matrix: Float32Array | number[]): void;
   // texture may be VIRO_INVALID_HANDLE (0) to clear it.
   viroSetMaterialShaderUniformTexture(material: number, name: string, texture: number): void;
+  // Merges a material onto everything `node` and its subtree draw.
+  viroApplyShaderOverride(node: number, material: number): void;
 
   // Textures. pixels is an RGBA8 buffer (width*height*4 bytes).
   viroCreateTextureRGBA(
