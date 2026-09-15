@@ -34,10 +34,24 @@ export interface ViroWebModule {
   viroAddChildNode(parent: number, child: number): void;
   viroRemoveNodeFromParent(node: number): void;
   viroDestroyNode(node: number): void;
+  viroSetNodeRenderingOrder(node: number, order: number): void;
+  viroSetNodeLightReceivingBitMask(node: number, mask: number, recursive: boolean): void;
+  viroSetNodeShadowCastingBitMask(node: number, mask: number, recursive: boolean): void;
+  // axis: 0 X, 1 Y, 2 Z, 3 all; anything else removes the constraint.
+  viroSetNodeBillboard(node: number, axis: number): void;
+  viroGetNodeWorldPosition(node: number): number[];
 
   viroCreateBox(width: number, height: number, length: number): number;
   viroCreateSphere(radius: number): number;
   viroCreateSurface(width: number, height: number): number;
+  viroCreateSurfaceUV(
+    width: number,
+    height: number,
+    u0: number,
+    v0: number,
+    u1: number,
+    v1: number,
+  ): number;
   viroCreateText(
     text: string,
     width: number,
@@ -173,6 +187,11 @@ export interface ViroWebModule {
     velMaxZ: number,
   ): number;
   viroSetParticleEmitterRun(node: number, run: boolean): void;
+  viroSetParticleAcceleration(
+    node: number,
+    minX: number, minY: number, minZ: number,
+    maxX: number, maxY: number, maxZ: number,
+  ): void;
 
   // Events: register one callback; WASM invokes it as
   // (nodeHandle, eventAction, source, intArg, x, y, z).
@@ -199,6 +218,13 @@ export interface ViroWebModule {
   viroSetLightAttenuation(light: number, start: number, end: number): void;
   viroSetLightSpotAngles(light: number, inner: number, outer: number): void;
   viroSetLightCastsShadow(light: number, castsShadow: boolean): void;
+  viroSetLightInfluenceBitMask(light: number, mask: number): void;
+  viroSetLightShadowOpacity(light: number, opacity: number): void;
+  viroSetLightShadowMapSize(light: number, size: number): void;
+  viroSetLightShadowBias(light: number, bias: number): void;
+  viroSetLightShadowNearZ(light: number, nearZ: number): void;
+  viroSetLightShadowFarZ(light: number, farZ: number): void;
+  viroSetLightShadowOrthographicSize(light: number, size: number): void;
   viroAddLightToNode(node: number, light: number): void;
   viroRemoveLightFromNode(node: number, light: number): void;
   viroDestroyLight(light: number): void;

@@ -26,6 +26,7 @@ export {
   ViroLineBreakMode,
   ViroTextClipMode,
   ViroParticleSpawnShape,
+  ViroBillboardAxis,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type {

@@ -90,6 +90,14 @@ export enum ViroTextClipMode {
   None = 1,
 }
 
+/** Free axis for a billboard constraint (mirrors VROBillboardAxis). */
+export enum ViroBillboardAxis {
+  X = 0,
+  Y = 1,
+  Z = 2,
+  All = 3,
+}
+
 /** Particle spawn-volume shape (mirrors VROParticleSpawnVolume::Shape). */
 export enum ViroParticleSpawnShape {
   Box = 0,
@@ -210,6 +218,42 @@ export class ViroSceneApi {
   setNodeEventEnabled(node: ViroHandle, action: ViroEventAction, enabled: boolean): void {
     this.m.viroSetNodeEventEnabled(node, action, enabled);
   }
+  /** Drawn-last wins among equal-depth fragments. Mirrors the native prop. */
+  setNodeRenderingOrder(node: ViroHandle, order: number): void {
+    if (typeof this.m.viroSetNodeRenderingOrder !== "function") return;
+    this.m.viroSetNodeRenderingOrder(node, order);
+  }
+  /**
+   * A light lights this node only where their masks intersect. `recursive`
+   * matters for a loaded model, whose geometry is on children rather than on
+   * the handle the caller owns.
+   */
+  setNodeLightReceivingBitMask(node: ViroHandle, mask: number, recursive = true): void {
+    if (typeof this.m.viroSetNodeLightReceivingBitMask !== "function") return;
+    this.m.viroSetNodeLightReceivingBitMask(node, mask, recursive);
+  }
+  setNodeShadowCastingBitMask(node: ViroHandle, mask: number, recursive = true): void {
+    if (typeof this.m.viroSetNodeShadowCastingBitMask !== "function") return;
+    this.m.viroSetNodeShadowCastingBitMask(node, mask, recursive);
+  }
+  /** Turn the node to face the camera about `axis`, or null to stop. */
+  setNodeBillboard(node: ViroHandle, axis: ViroBillboardAxis | null): void {
+    if (typeof this.m.viroSetNodeBillboard !== "function") return;
+    this.m.viroSetNodeBillboard(node, axis ?? -1);
+  }
+  /**
+   * The node's world position, or null on a binary that cannot report it.
+   *
+   * Null rather than the origin on purpose: a caller measuring a distance has to
+   * be able to tell "at the origin" from "unknown", and treating the second as
+   * the first fires proximity triggers that should not have fired.
+   */
+  getNodeWorldPosition(node: ViroHandle): [number, number, number] | null {
+    if (typeof this.m.viroGetNodeWorldPosition !== "function") return null;
+    const p = this.m.viroGetNodeWorldPosition(node);
+    if (!p || p.length < 3) return null;
+    return [p[0]!, p[1]!, p[2]!];
+  }
 
   // --- Geometries ---
   createBox(width: number, height: number, length: number): ViroHandle {
@@ -220,6 +264,25 @@ export class ViroSceneApi {
   }
   createSurface(width: number, height: number): ViroHandle {
     return this.m.viroCreateSurface(width, height);
+  }
+  /**
+   * A surface whose texture is cropped to [u0,v0]-[u1,v1] rather than stretched
+   * over the whole quad — what imageClipMode ClipToBounds does on a device.
+   * Falls back to the uncropped surface on a binary without it, which is the
+   * picture whole and the wrong size rather than no picture at all.
+   */
+  createSurfaceUV(
+    width: number,
+    height: number,
+    u0: number,
+    v0: number,
+    u1: number,
+    v1: number,
+  ): ViroHandle {
+    if (typeof this.m.viroCreateSurfaceUV !== "function") {
+      return this.m.viroCreateSurface(width, height);
+    }
+    return this.m.viroCreateSurfaceUV(width, height, u0, v0, u1, v1);
   }
   createText(
     text: string,
@@ -543,6 +606,15 @@ export class ViroSceneApi {
       vxz,
     );
   }
+  /** Acceleration on a running emitter, as a [min, max] range like velocity. */
+  setParticleAcceleration(
+    node: ViroHandle,
+    min: [number, number, number],
+    max: [number, number, number],
+  ): void {
+    if (typeof this.m.viroSetParticleAcceleration !== "function") return;
+    this.m.viroSetParticleAcceleration(node, min[0], min[1], min[2], max[0], max[1], max[2]);
+  }
   setParticleEmitterRun(node: ViroHandle, run: boolean): void {
     this.m.viroSetParticleEmitterRun(node, run);
   }
@@ -574,6 +646,43 @@ export class ViroSceneApi {
   }
   setLightCastsShadow(light: ViroHandle, castsShadow: boolean): void {
     this.m.viroSetLightCastsShadow(light, castsShadow);
+  }
+  /** Pairs with a node's lightReceivingBitMask: both must intersect to light it. */
+  setLightInfluenceBitMask(light: ViroHandle, mask: number): void {
+    if (typeof this.m.viroSetLightInfluenceBitMask !== "function") return;
+    this.m.viroSetLightInfluenceBitMask(light, mask);
+  }
+  /**
+   * Shadow tuning. `castsShadow` decides whether a light casts at all; these
+   * decide whether the result is usable — too small a map or too low a bias is
+   * the difference between a shadow and a field of acne.
+   *
+   * No orthographic position: the native navigators take one but VROLight has no
+   * setter for it, so there is nowhere to forward it.
+   */
+  setLightShadowOpacity(light: ViroHandle, opacity: number): void {
+    if (typeof this.m.viroSetLightShadowOpacity !== "function") return;
+    this.m.viroSetLightShadowOpacity(light, opacity);
+  }
+  setLightShadowMapSize(light: ViroHandle, size: number): void {
+    if (typeof this.m.viroSetLightShadowMapSize !== "function") return;
+    this.m.viroSetLightShadowMapSize(light, size);
+  }
+  setLightShadowBias(light: ViroHandle, bias: number): void {
+    if (typeof this.m.viroSetLightShadowBias !== "function") return;
+    this.m.viroSetLightShadowBias(light, bias);
+  }
+  setLightShadowNearZ(light: ViroHandle, nearZ: number): void {
+    if (typeof this.m.viroSetLightShadowNearZ !== "function") return;
+    this.m.viroSetLightShadowNearZ(light, nearZ);
+  }
+  setLightShadowFarZ(light: ViroHandle, farZ: number): void {
+    if (typeof this.m.viroSetLightShadowFarZ !== "function") return;
+    this.m.viroSetLightShadowFarZ(light, farZ);
+  }
+  setLightShadowOrthographicSize(light: ViroHandle, size: number): void {
+    if (typeof this.m.viroSetLightShadowOrthographicSize !== "function") return;
+    this.m.viroSetLightShadowOrthographicSize(light, size);
   }
   addLightToNode(node: ViroHandle, light: ViroHandle): void {
     this.m.viroAddLightToNode(node, light);
