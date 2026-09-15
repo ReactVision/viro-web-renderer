@@ -387,6 +387,33 @@ export class ViroSceneApi {
     this.m.viroDestroyMaterial(material);
   }
 
+  // --- Post-processing effects ---
+  //
+  // All four open on, and the choreographer degrades whatever the driver cannot
+  // do. The native scene navigators expose the same four as props; a caller that
+  // switches HDR and bloom off here is matching what a device is told to do,
+  // which is the difference these exist to close.
+  //
+  // The return is the state after the call, not whether the call was understood:
+  // asking for HDR where the driver has no float colour buffers leaves it off.
+  // A binary that predates these reports false and stays as it was.
+  setHDREnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetHDREnabled !== "function") return false;
+    return this.m.viroSetHDREnabled(enabled);
+  }
+  setBloomEnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetBloomEnabled !== "function") return false;
+    return this.m.viroSetBloomEnabled(enabled);
+  }
+  setPBREnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetPBREnabled !== "function") return false;
+    return this.m.viroSetPBREnabled(enabled);
+  }
+  setShadowsEnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetShadowsEnabled !== "function") return false;
+    return this.m.viroSetShadowsEnabled(enabled);
+  }
+
   // --- Textures ---
   createTextureRGBA(
     pixels: Uint8Array | number[],

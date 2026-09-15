@@ -107,6 +107,12 @@ export interface ViroWebModule {
   // Merges a material onto everything `node` and its subtree draw.
   viroApplyShaderOverride(node: number, material: number): void;
 
+  // Post-processing effects. Each returns whether the effect is on afterwards.
+  viroSetHDREnabled(enabled: boolean): boolean;
+  viroSetBloomEnabled(enabled: boolean): boolean;
+  viroSetPBREnabled(enabled: boolean): boolean;
+  viroSetShadowsEnabled(enabled: boolean): boolean;
+
   // Textures. pixels is an RGBA8 buffer (width*height*4 bytes).
   viroCreateTextureRGBA(
     pixels: Uint8Array | number[],
