@@ -27,6 +27,10 @@ export {
   ViroTextClipMode,
   ViroParticleSpawnShape,
   ViroBillboardAxis,
+  ViroPhysicsBodyType,
+  ViroPhysicsShapeType,
+  type ViroCollision,
+  VIRO_COMPOUND_CHILD_STRIDE,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type {

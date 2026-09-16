@@ -90,6 +90,47 @@ export enum ViroTextClipMode {
   None = 1,
 }
 
+/** Rigid body kind (mirrors VROPhysicsBody::VROPhysicsBodyType). */
+export enum ViroPhysicsBodyType {
+  Static = 0,
+  Kinematic = 1,
+  Dynamic = 2,
+}
+
+/**
+ * Collider shape (mirrors VROPhysicsShape::VROShapeType).
+ *
+ * `Infer` is the absence of a shape, not a shape: virocore then fits one to the
+ * node's own bounding box and applies its world scale, which is what the editors
+ * measure. Sending a unit box instead is what used to give a 0.4 m model a 1 m
+ * collider and stand it off the ground.
+ */
+export enum ViroPhysicsShapeType {
+  Infer = -1,
+  Sphere = 2,
+  /** params are HALF spans, as virocore takes them. */
+  Box = 3,
+  /**
+   * Parts flattened into `params`, VIRO_COMPOUND_CHILD_STRIDE floats each:
+   * the part type (0 box, 1 sphere), then the box's three spans or the sphere's
+   * radius in the first of those three slots, then the part's position relative
+   * to the node. A part's rotation is not carried — virocore has nowhere to put
+   * it, so a rotated part is placed unrotated rather than silently misplaced.
+   */
+  Compound = 5,
+}
+
+/** VROPhysicsShape::kCompoundChildStride. */
+export const VIRO_COMPOUND_CHILD_STRIDE = 7;
+
+/** A collision, as the physics world reports it. Tags are node tags. */
+export interface ViroCollision {
+  tag: string;
+  otherTag: string;
+  point: [number, number, number];
+  normal: [number, number, number];
+}
+
 /** Free axis for a billboard constraint (mirrors VROBillboardAxis). */
 export enum ViroBillboardAxis {
   X = 0,
@@ -475,6 +516,76 @@ export class ViroSceneApi {
   setShadowsEnabled(enabled: boolean): boolean {
     if (typeof this.m.viroSetShadowsEnabled !== "function") return false;
     return this.m.viroSetShadowsEnabled(enabled);
+  }
+
+  // --- Physics ---
+  //
+  // Bullet ships inside the binary and nothing reached it until these existed.
+  //
+  // `setPhysicsWorld(false, …)` is a real instruction and not a no-op: it
+  // detaches every body. virocore creates a physics world on demand and steps
+  // whatever it holds, so a scene whose author switched physics off would
+  // otherwise simulate at the engine's own gravity.
+  setPhysicsWorld(enabled: boolean, gravity: [number, number, number]): boolean {
+    if (typeof this.m.viroSetPhysicsWorld !== "function") return false;
+    this.m.viroSetPhysicsWorld(enabled, gravity[0], gravity[1], gravity[2]);
+    return true;
+  }
+  /** `tag` is what a collision reports as the other party. */
+  setPhysicsBody(
+    node: ViroHandle,
+    type: ViroPhysicsBodyType,
+    mass: number,
+    shapeType: ViroPhysicsShapeType,
+    shapeParams: number[],
+    tag: string,
+  ): boolean {
+    if (typeof this.m.viroSetPhysicsBody !== "function") return false;
+    this.m.viroSetPhysicsBody(node, type, mass, shapeType, shapeParams, tag);
+    return true;
+  }
+  setPhysicsBodyProperties(
+    node: ViroHandle,
+    restitution: number,
+    friction: number,
+    useGravity: boolean,
+  ): void {
+    if (typeof this.m.viroSetPhysicsBodyProperties !== "function") return;
+    this.m.viroSetPhysicsBodyProperties(node, restitution, friction, useGravity);
+  }
+  /**
+   * `isConstant: false` is the instant latch the next physics step consumes
+   * once. A constant velocity is reasserted on the rigid body every frame and
+   * gravity never gets a turn, so a launched object climbs forever — which is
+   * why Studio sends its velocity as an instant one.
+   */
+  setPhysicsVelocity(
+    node: ViroHandle,
+    velocity: [number, number, number],
+    isConstant = false,
+  ): void {
+    if (typeof this.m.viroSetPhysicsVelocity !== "function") return;
+    this.m.viroSetPhysicsVelocity(node, velocity[0], velocity[1], velocity[2], isConstant);
+  }
+  applyPhysicsImpulse(node: ViroHandle, impulse: [number, number, number]): void {
+    if (typeof this.m.viroApplyPhysicsImpulse !== "function") return;
+    this.m.viroApplyPhysicsImpulse(node, impulse[0], impulse[1], impulse[2]);
+  }
+  applyPhysicsTorque(node: ViroHandle, torque: [number, number, number]): void {
+    if (typeof this.m.viroApplyPhysicsTorque !== "function") return;
+    this.m.viroApplyPhysicsTorque(node, torque[0], torque[1], torque[2]);
+  }
+  clearPhysicsBody(node: ViroHandle): void {
+    if (typeof this.m.viroClearPhysicsBody !== "function") return;
+    this.m.viroClearPhysicsBody(node);
+  }
+  /** One callback for the whole scene; pass null to stop listening. */
+  setCollisionHandler(handler: ((collision: ViroCollision) => void) | null): boolean {
+    if (typeof this.m.viroSetCollisionCallback !== "function") return false;
+    this.m.viroSetCollisionCallback((tag, otherTag, px, py, pz, nx, ny, nz) => {
+      handler?.({ tag, otherTag, point: [px, py, pz], normal: [nx, ny, nz] });
+    });
+    return true;
   }
 
   // --- Textures ---

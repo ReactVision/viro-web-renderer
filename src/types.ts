@@ -127,6 +127,34 @@ export interface ViroWebModule {
   viroSetPBREnabled(enabled: boolean): boolean;
   viroSetShadowsEnabled(enabled: boolean): boolean;
 
+  // Physics. Bullet is compiled into the binary; these are the only way in.
+  viroSetPhysicsWorld(enabled: boolean, gx: number, gy: number, gz: number): void;
+  viroSetPhysicsBody(
+    node: number,
+    type: number,
+    mass: number,
+    shapeType: number,
+    shapeParams: number[],
+    tag: string,
+  ): void;
+  viroSetPhysicsBodyProperties(
+    node: number,
+    restitution: number,
+    friction: number,
+    useGravity: boolean,
+  ): void;
+  viroSetPhysicsVelocity(node: number, x: number, y: number, z: number, isConstant: boolean): void;
+  viroApplyPhysicsImpulse(node: number, x: number, y: number, z: number): void;
+  viroApplyPhysicsTorque(node: number, x: number, y: number, z: number): void;
+  viroClearPhysicsBody(node: number): void;
+  viroSetCollisionCallback(
+    cb: (
+      tagA: string, tagB: string,
+      px: number, py: number, pz: number,
+      nx: number, ny: number, nz: number,
+    ) => void,
+  ): void;
+
   // Textures. pixels is an RGBA8 buffer (width*height*4 bytes).
   viroCreateTextureRGBA(
     pixels: Uint8Array | number[],
