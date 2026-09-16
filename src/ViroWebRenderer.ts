@@ -245,6 +245,12 @@ export class ViroWebRenderer {
     module.initViroScene(selector, width, height);
 
     const renderer = new ViroWebRenderer(module, canvas);
+    // Once, at startup: what a bug report needs pasted back and cannot find
+    // anywhere else, since the binary reaches an app through two hand copies.
+    const buildId = renderer.scene.getBuildId();
+    if (buildId) {
+      console.log("[Viro web] renderer build " + buildId);
+    }
     renderer.attachInput();
     return renderer;
   }

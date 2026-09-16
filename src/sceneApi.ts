@@ -518,6 +518,20 @@ export class ViroSceneApi {
     return this.m.viroSetShadowsEnabled(enabled);
   }
   /**
+   * What the WASM binary is: the virocore commit it was built from, whether that
+   * tree was dirty, and when. Empty from a binary built before the stamp existed.
+   *
+   * The binary is copied by hand out of virocore into this package and from here
+   * into an app's node_modules, so by the time a bug report arrives nothing
+   * around the file says where it came from. Asking it directly is the only
+   * answer that cannot have drifted.
+   */
+  getBuildId(): string {
+    if (typeof this.m.viroGetBuildId !== "function") return "";
+    return this.m.viroGetBuildId();
+  }
+
+  /**
    * The tone curve alone. This is the switch a caller wants when the curve is
    * the problem: HDR carries PBR with it (virocore's isPBREnabled is
    * `_hdrEnabled && _pbrEnabled`), so switching HDR off to lose Hable also drops
