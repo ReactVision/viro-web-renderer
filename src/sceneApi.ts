@@ -146,6 +146,30 @@ export enum ViroParticleSpawnShape {
   Point = 2,
 }
 
+/** Which of a particle's visual properties a modifier drives. */
+export enum ViroParticleProperty {
+  /** Opacity. Only the x component is read. */
+  Alpha = 0,
+  /** Colour, as rgb in 0..1. */
+  Color = 1,
+  Scale = 2,
+  /** Radians. */
+  Rotation = 3,
+}
+
+/** What a particle modifier interpolates against over the particle's life. */
+export enum ViroParticleFactor {
+  Time = 0,
+  Distance = 1,
+  Velocity = 2,
+}
+
+/**
+ * Floats per interpolation point in a modifier's flattened interval list:
+ * startFactor, endFactor, then the target x, y, z.
+ */
+export const VIRO_PARTICLE_INTERVAL_STRIDE = 5;
+
 /** AR tracking state (mirrors VROARTrackingState in VROARCamera.h). */
 export enum ViroTrackingState {
   Unavailable = 1,
@@ -784,6 +808,40 @@ export class ViroSceneApi {
   ): void {
     if (typeof this.m.viroSetParticleAcceleration !== "function") return;
     this.m.viroSetParticleAcceleration(node, min[0], min[1], min[2], max[0], max[1], max[2]);
+  }
+  /**
+   * How one of a particle's visual properties behaves over its life: an initial
+   * [min, max] range to randomise from, what to interpolate against, and the
+   * points to interpolate towards.
+   *
+   * Without these an emitter draws every particle at full opacity and one size
+   * until it expires, so smoke never thins and a spark never shrinks.
+   *
+   * `intervals` is flattened at VIRO_PARTICLE_INTERVAL_STRIDE floats per point,
+   * and virocore drops a trailing partial entry rather than reading past it.
+   */
+  setParticleModifier(
+    node: ViroHandle,
+    property: ViroParticleProperty,
+    min: [number, number, number],
+    max: [number, number, number],
+    factor: ViroParticleFactor,
+    intervals: number[],
+  ): boolean {
+    if (typeof this.m.viroSetParticleModifier !== "function") return false;
+    this.m.viroSetParticleModifier(
+      node,
+      property,
+      min[0],
+      min[1],
+      min[2],
+      max[0],
+      max[1],
+      max[2],
+      factor,
+      intervals,
+    );
+    return true;
   }
   setParticleEmitterRun(node: ViroHandle, run: boolean): void {
     this.m.viroSetParticleEmitterRun(node, run);

@@ -136,6 +136,21 @@ export interface ViroWebModule {
   viroGetMorphTargetKeys(node: number): string[];
   viroSetMorphMode(node: number, mode: string): boolean;
 
+  // A particle's colour/opacity/scale/rotation over its life. `intervals` is
+  // flattened at five floats per point: startFactor, endFactor, x, y, z.
+  viroSetParticleModifier(
+    node: number,
+    property: number,
+    minX: number,
+    minY: number,
+    minZ: number,
+    maxX: number,
+    maxY: number,
+    maxZ: number,
+    factor: number,
+    intervals: number[],
+  ): void;
+
   // Physics. Bullet is compiled into the binary; these are the only way in.
   viroSetPhysicsWorld(enabled: boolean, gx: number, gy: number, gz: number): void;
   viroSetPhysicsBody(
