@@ -517,6 +517,39 @@ export class ViroSceneApi {
     if (typeof this.m.viroSetShadowsEnabled !== "function") return false;
     return this.m.viroSetShadowsEnabled(enabled);
   }
+  // --- Morph targets ---
+  //
+  // A glTF or FBX model carries its blend shapes in the geometry virocore
+  // already loaded; without these nothing on web could name one or move it, so a
+  // rig that animates on a phone sat at its rest pose in a browser.
+  //
+  // Each acts on the node's whole subtree, as the native bridges do: a loaded
+  // model keeps its meshes on child nodes.
+
+  /** Weight for one target by name. Unknown names are ignored, as natively. */
+  setMorphTargetWeight(node: ViroHandle, target: string, weight: number): boolean {
+    if (typeof this.m.viroSetMorphTargetWeight !== "function") return false;
+    this.m.viroSetMorphTargetWeight(node, target, weight);
+    return true;
+  }
+
+  /** The names this model morphs by, sorted, deduplicated across its meshes. */
+  getMorphTargetKeys(node: ViroHandle): string[] {
+    if (typeof this.m.viroGetMorphTargetKeys !== "function") return [];
+    return this.m.viroGetMorphTargetKeys(node) ?? [];
+  }
+
+  /**
+   * Where the blending runs: "cpu", "gpu" or "hybrid", the same strings native
+   * takes. Returns whether every morpher accepted it — the GPU path needs vertex
+   * attributes a model may not have left, and virocore refuses rather than
+   * degrade silently.
+   */
+  setMorphMode(node: ViroHandle, mode: "cpu" | "gpu" | "hybrid"): boolean {
+    if (typeof this.m.viroSetMorphMode !== "function") return false;
+    return this.m.viroSetMorphMode(node, mode);
+  }
+
   /**
    * What the WASM binary is: the virocore commit it was built from, whether that
    * tree was dirty, and when. Empty from a binary built before the stamp existed.

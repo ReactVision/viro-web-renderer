@@ -131,6 +131,11 @@ export interface ViroWebModule {
   // The virocore commit this binary was built from, dirty flag and date.
   viroGetBuildId(): string;
 
+  // Morph targets (blend shapes). All three act on the node's whole subtree.
+  viroSetMorphTargetWeight(node: number, target: string, weight: number): void;
+  viroGetMorphTargetKeys(node: number): string[];
+  viroSetMorphMode(node: number, mode: string): boolean;
+
   // Physics. Bullet is compiled into the binary; these are the only way in.
   viroSetPhysicsWorld(enabled: boolean, gx: number, gy: number, gz: number): void;
   viroSetPhysicsBody(
