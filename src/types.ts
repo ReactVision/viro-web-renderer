@@ -126,6 +126,8 @@ export interface ViroWebModule {
   viroSetBloomEnabled(enabled: boolean): boolean;
   viroSetPBREnabled(enabled: boolean): boolean;
   viroSetShadowsEnabled(enabled: boolean): boolean;
+  // The tone curve on its own, so a caller can drop Hable without dropping PBR.
+  viroSetToneMappingEnabled(enabled: boolean): void;
 
   // Physics. Bullet is compiled into the binary; these are the only way in.
   viroSetPhysicsWorld(enabled: boolean, gx: number, gy: number, gz: number): void;

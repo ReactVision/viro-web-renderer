@@ -517,6 +517,18 @@ export class ViroSceneApi {
     if (typeof this.m.viroSetShadowsEnabled !== "function") return false;
     return this.m.viroSetShadowsEnabled(enabled);
   }
+  /**
+   * The tone curve alone. This is the switch a caller wants when the curve is
+   * the problem: HDR carries PBR with it (virocore's isPBREnabled is
+   * `_hdrEnabled && _pbrEnabled`), so switching HDR off to lose Hable also drops
+   * every glTF material back to Blinn, where its default specular renders it
+   * white. Native's ViroScene has said this as `toneMappingEnabled` all along.
+   */
+  setToneMappingEnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetToneMappingEnabled !== "function") return false;
+    this.m.viroSetToneMappingEnabled(enabled);
+    return true;
+  }
 
   // --- Physics ---
   //
