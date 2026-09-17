@@ -26,6 +26,14 @@ export {
   ViroLineBreakMode,
   ViroTextClipMode,
   ViroParticleSpawnShape,
+  ViroParticleProperty,
+  ViroParticleFactor,
+  VIRO_PARTICLE_INTERVAL_STRIDE,
+  ViroBillboardAxis,
+  ViroPhysicsBodyType,
+  ViroPhysicsShapeType,
+  type ViroCollision,
+  VIRO_COMPOUND_CHILD_STRIDE,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type {

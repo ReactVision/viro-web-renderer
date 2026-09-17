@@ -986,6 +986,23 @@ export class ViroArSession {
     return true;
   }
 
+  /**
+   * The camera's latest tracked pose, in virocore world space.
+   *
+   * The session feeds this to the renderer through `arSetPose` and the renderer
+   * hands nothing back, so this is the only place it can be read. Spatial audio
+   * needs it: a Web Audio listener left at the origin pans every sound against
+   * a listener who never moves.
+   */
+  get cameraPose(): {
+    position: Vec3;
+    quaternion: [number, number, number, number];
+  } {
+    const [px, py, pz] = this.lastCamPos;
+    const [qx, qy, qz, qw] = this.lastCamQuat;
+    return { position: [px, py, pz], quaternion: [qx, qy, qz, qw] };
+  }
+
   /** How many frames the loaded recording has. */
   get playbackFrameCount(): number {
     return this.opts.playback?.frames.length ?? 0;

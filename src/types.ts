@@ -34,10 +34,24 @@ export interface ViroWebModule {
   viroAddChildNode(parent: number, child: number): void;
   viroRemoveNodeFromParent(node: number): void;
   viroDestroyNode(node: number): void;
+  viroSetNodeRenderingOrder(node: number, order: number): void;
+  viroSetNodeLightReceivingBitMask(node: number, mask: number, recursive: boolean): void;
+  viroSetNodeShadowCastingBitMask(node: number, mask: number, recursive: boolean): void;
+  // axis: 0 X, 1 Y, 2 Z, 3 all; anything else removes the constraint.
+  viroSetNodeBillboard(node: number, axis: number): void;
+  viroGetNodeWorldPosition(node: number): number[];
 
   viroCreateBox(width: number, height: number, length: number): number;
   viroCreateSphere(radius: number): number;
   viroCreateSurface(width: number, height: number): number;
+  viroCreateSurfaceUV(
+    width: number,
+    height: number,
+    u0: number,
+    v0: number,
+    u1: number,
+    v1: number,
+  ): number;
   viroCreateText(
     text: string,
     width: number,
@@ -104,6 +118,66 @@ export interface ViroWebModule {
   viroSetMaterialShaderUniformMat4(material: number, name: string, matrix: Float32Array | number[]): void;
   // texture may be VIRO_INVALID_HANDLE (0) to clear it.
   viroSetMaterialShaderUniformTexture(material: number, name: string, texture: number): void;
+  // Merges a material onto everything `node` and its subtree draw.
+  viroApplyShaderOverride(node: number, material: number): void;
+
+  // Post-processing effects. Each returns whether the effect is on afterwards.
+  viroSetHDREnabled(enabled: boolean): boolean;
+  viroSetBloomEnabled(enabled: boolean): boolean;
+  viroSetPBREnabled(enabled: boolean): boolean;
+  viroSetShadowsEnabled(enabled: boolean): boolean;
+  // The tone curve on its own, so a caller can drop Hable without dropping PBR.
+  viroSetToneMappingEnabled(enabled: boolean): void;
+  // The virocore commit this binary was built from, dirty flag and date.
+  viroGetBuildId(): string;
+
+  // Morph targets (blend shapes). All three act on the node's whole subtree.
+  viroSetMorphTargetWeight(node: number, target: string, weight: number): void;
+  viroGetMorphTargetKeys(node: number): string[];
+  viroSetMorphMode(node: number, mode: string): boolean;
+
+  // A particle's colour/opacity/scale/rotation over its life. `intervals` is
+  // flattened at five floats per point: startFactor, endFactor, x, y, z.
+  viroSetParticleModifier(
+    node: number,
+    property: number,
+    minX: number,
+    minY: number,
+    minZ: number,
+    maxX: number,
+    maxY: number,
+    maxZ: number,
+    factor: number,
+    intervals: number[],
+  ): void;
+
+  // Physics. Bullet is compiled into the binary; these are the only way in.
+  viroSetPhysicsWorld(enabled: boolean, gx: number, gy: number, gz: number): void;
+  viroSetPhysicsBody(
+    node: number,
+    type: number,
+    mass: number,
+    shapeType: number,
+    shapeParams: number[],
+    tag: string,
+  ): void;
+  viroSetPhysicsBodyProperties(
+    node: number,
+    restitution: number,
+    friction: number,
+    useGravity: boolean,
+  ): void;
+  viroSetPhysicsVelocity(node: number, x: number, y: number, z: number, isConstant: boolean): void;
+  viroApplyPhysicsImpulse(node: number, x: number, y: number, z: number): void;
+  viroApplyPhysicsTorque(node: number, x: number, y: number, z: number): void;
+  viroClearPhysicsBody(node: number): void;
+  viroSetCollisionCallback(
+    cb: (
+      tagA: string, tagB: string,
+      px: number, py: number, pz: number,
+      nx: number, ny: number, nz: number,
+    ) => void,
+  ): void;
 
   // Textures. pixels is an RGBA8 buffer (width*height*4 bytes).
   viroCreateTextureRGBA(
@@ -165,6 +239,11 @@ export interface ViroWebModule {
     velMaxZ: number,
   ): number;
   viroSetParticleEmitterRun(node: number, run: boolean): void;
+  viroSetParticleAcceleration(
+    node: number,
+    minX: number, minY: number, minZ: number,
+    maxX: number, maxY: number, maxZ: number,
+  ): void;
 
   // Events: register one callback; WASM invokes it as
   // (nodeHandle, eventAction, source, intArg, x, y, z).
@@ -191,6 +270,13 @@ export interface ViroWebModule {
   viroSetLightAttenuation(light: number, start: number, end: number): void;
   viroSetLightSpotAngles(light: number, inner: number, outer: number): void;
   viroSetLightCastsShadow(light: number, castsShadow: boolean): void;
+  viroSetLightInfluenceBitMask(light: number, mask: number): void;
+  viroSetLightShadowOpacity(light: number, opacity: number): void;
+  viroSetLightShadowMapSize(light: number, size: number): void;
+  viroSetLightShadowBias(light: number, bias: number): void;
+  viroSetLightShadowNearZ(light: number, nearZ: number): void;
+  viroSetLightShadowFarZ(light: number, farZ: number): void;
+  viroSetLightShadowOrthographicSize(light: number, size: number): void;
   viroAddLightToNode(node: number, light: number): void;
   viroRemoveLightFromNode(node: number, light: number): void;
   viroDestroyLight(light: number): void;

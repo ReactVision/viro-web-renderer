@@ -90,12 +90,85 @@ export enum ViroTextClipMode {
   None = 1,
 }
 
+/** Rigid body kind (mirrors VROPhysicsBody::VROPhysicsBodyType). */
+export enum ViroPhysicsBodyType {
+  Static = 0,
+  Kinematic = 1,
+  Dynamic = 2,
+}
+
+/**
+ * Collider shape (mirrors VROPhysicsShape::VROShapeType).
+ *
+ * `Infer` is the absence of a shape, not a shape: virocore then fits one to the
+ * node's own bounding box and applies its world scale, which is what the editors
+ * measure. Sending a unit box instead is what used to give a 0.4 m model a 1 m
+ * collider and stand it off the ground.
+ */
+export enum ViroPhysicsShapeType {
+  Infer = -1,
+  Sphere = 2,
+  /** params are HALF spans, as virocore takes them. */
+  Box = 3,
+  /**
+   * Parts flattened into `params`, VIRO_COMPOUND_CHILD_STRIDE floats each:
+   * the part type (0 box, 1 sphere), then the box's three spans or the sphere's
+   * radius in the first of those three slots, then the part's position relative
+   * to the node. A part's rotation is not carried — virocore has nowhere to put
+   * it, so a rotated part is placed unrotated rather than silently misplaced.
+   */
+  Compound = 5,
+}
+
+/** VROPhysicsShape::kCompoundChildStride. */
+export const VIRO_COMPOUND_CHILD_STRIDE = 7;
+
+/** A collision, as the physics world reports it. Tags are node tags. */
+export interface ViroCollision {
+  tag: string;
+  otherTag: string;
+  point: [number, number, number];
+  normal: [number, number, number];
+}
+
+/** Free axis for a billboard constraint (mirrors VROBillboardAxis). */
+export enum ViroBillboardAxis {
+  X = 0,
+  Y = 1,
+  Z = 2,
+  All = 3,
+}
+
 /** Particle spawn-volume shape (mirrors VROParticleSpawnVolume::Shape). */
 export enum ViroParticleSpawnShape {
   Box = 0,
   Sphere = 1,
   Point = 2,
 }
+
+/** Which of a particle's visual properties a modifier drives. */
+export enum ViroParticleProperty {
+  /** Opacity. Only the x component is read. */
+  Alpha = 0,
+  /** Colour, as rgb in 0..1. */
+  Color = 1,
+  Scale = 2,
+  /** Radians. */
+  Rotation = 3,
+}
+
+/** What a particle modifier interpolates against over the particle's life. */
+export enum ViroParticleFactor {
+  Time = 0,
+  Distance = 1,
+  Velocity = 2,
+}
+
+/**
+ * Floats per interpolation point in a modifier's flattened interval list:
+ * startFactor, endFactor, then the target x, y, z.
+ */
+export const VIRO_PARTICLE_INTERVAL_STRIDE = 5;
 
 /** AR tracking state (mirrors VROARTrackingState in VROARCamera.h). */
 export enum ViroTrackingState {
@@ -210,6 +283,42 @@ export class ViroSceneApi {
   setNodeEventEnabled(node: ViroHandle, action: ViroEventAction, enabled: boolean): void {
     this.m.viroSetNodeEventEnabled(node, action, enabled);
   }
+  /** Drawn-last wins among equal-depth fragments. Mirrors the native prop. */
+  setNodeRenderingOrder(node: ViroHandle, order: number): void {
+    if (typeof this.m.viroSetNodeRenderingOrder !== "function") return;
+    this.m.viroSetNodeRenderingOrder(node, order);
+  }
+  /**
+   * A light lights this node only where their masks intersect. `recursive`
+   * matters for a loaded model, whose geometry is on children rather than on
+   * the handle the caller owns.
+   */
+  setNodeLightReceivingBitMask(node: ViroHandle, mask: number, recursive = true): void {
+    if (typeof this.m.viroSetNodeLightReceivingBitMask !== "function") return;
+    this.m.viroSetNodeLightReceivingBitMask(node, mask, recursive);
+  }
+  setNodeShadowCastingBitMask(node: ViroHandle, mask: number, recursive = true): void {
+    if (typeof this.m.viroSetNodeShadowCastingBitMask !== "function") return;
+    this.m.viroSetNodeShadowCastingBitMask(node, mask, recursive);
+  }
+  /** Turn the node to face the camera about `axis`, or null to stop. */
+  setNodeBillboard(node: ViroHandle, axis: ViroBillboardAxis | null): void {
+    if (typeof this.m.viroSetNodeBillboard !== "function") return;
+    this.m.viroSetNodeBillboard(node, axis ?? -1);
+  }
+  /**
+   * The node's world position, or null on a binary that cannot report it.
+   *
+   * Null rather than the origin on purpose: a caller measuring a distance has to
+   * be able to tell "at the origin" from "unknown", and treating the second as
+   * the first fires proximity triggers that should not have fired.
+   */
+  getNodeWorldPosition(node: ViroHandle): [number, number, number] | null {
+    if (typeof this.m.viroGetNodeWorldPosition !== "function") return null;
+    const p = this.m.viroGetNodeWorldPosition(node);
+    if (!p || p.length < 3) return null;
+    return [p[0]!, p[1]!, p[2]!];
+  }
 
   // --- Geometries ---
   createBox(width: number, height: number, length: number): ViroHandle {
@@ -220,6 +329,25 @@ export class ViroSceneApi {
   }
   createSurface(width: number, height: number): ViroHandle {
     return this.m.viroCreateSurface(width, height);
+  }
+  /**
+   * A surface whose texture is cropped to [u0,v0]-[u1,v1] rather than stretched
+   * over the whole quad — what imageClipMode ClipToBounds does on a device.
+   * Falls back to the uncropped surface on a binary without it, which is the
+   * picture whole and the wrong size rather than no picture at all.
+   */
+  createSurfaceUV(
+    width: number,
+    height: number,
+    u0: number,
+    v0: number,
+    u1: number,
+    v1: number,
+  ): ViroHandle {
+    if (typeof this.m.viroCreateSurfaceUV !== "function") {
+      return this.m.viroCreateSurface(width, height);
+    }
+    return this.m.viroCreateSurfaceUV(width, height, u0, v0, u1, v1);
   }
   createText(
     text: string,
@@ -360,8 +488,187 @@ export class ViroSceneApi {
   setMaterialShaderUniformTexture(material: ViroHandle, name: string, texture: ViroHandle): void {
     this.m.viroSetMaterialShaderUniformTexture(material, name, texture);
   }
+  /**
+   * Merge `material` onto everything `node` draws, itself and its whole subtree.
+   * The counterpart of the native bridges' `shaderOverrides` prop, with the same
+   * merge: each drawn material keeps its own colours and textures and takes the
+   * override's lighting model, shininess, blend mode, transparency mode, cull
+   * mode and two depth flags, plus its shader modifiers and uniforms.
+   *
+   * For a loaded model rather than a geometry built here: `setGeometryMaterial`
+   * needs a geometry handle, and a model's geometry belongs to the loader, not
+   * to the caller. Re-applying is safe — each call merges onto the materials the
+   * node had before the first override, not onto the previous merge.
+   */
+  applyShaderOverride(node: ViroHandle, material: ViroHandle): boolean {
+    // The binary is a build output of another repo and is routinely older than
+    // this file. Calling straight through would throw on a module that predates
+    // the export and take the whole scene down over a material; returning false
+    // leaves the model with its own materials, which is what it had anyway.
+    if (typeof this.m.viroApplyShaderOverride !== "function") {
+      return false;
+    }
+    this.m.viroApplyShaderOverride(node, material);
+    return true;
+  }
   destroyMaterial(material: ViroHandle): void {
     this.m.viroDestroyMaterial(material);
+  }
+
+  // --- Post-processing effects ---
+  //
+  // All four open on, and the choreographer degrades whatever the driver cannot
+  // do. The native scene navigators expose the same four as props; a caller that
+  // switches HDR and bloom off here is matching what a device is told to do,
+  // which is the difference these exist to close.
+  //
+  // The return is the state after the call, not whether the call was understood:
+  // asking for HDR where the driver has no float colour buffers leaves it off.
+  // A binary that predates these reports false and stays as it was.
+  setHDREnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetHDREnabled !== "function") return false;
+    return this.m.viroSetHDREnabled(enabled);
+  }
+  setBloomEnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetBloomEnabled !== "function") return false;
+    return this.m.viroSetBloomEnabled(enabled);
+  }
+  setPBREnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetPBREnabled !== "function") return false;
+    return this.m.viroSetPBREnabled(enabled);
+  }
+  setShadowsEnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetShadowsEnabled !== "function") return false;
+    return this.m.viroSetShadowsEnabled(enabled);
+  }
+  // --- Morph targets ---
+  //
+  // A glTF or FBX model carries its blend shapes in the geometry virocore
+  // already loaded; without these nothing on web could name one or move it, so a
+  // rig that animates on a phone sat at its rest pose in a browser.
+  //
+  // Each acts on the node's whole subtree, as the native bridges do: a loaded
+  // model keeps its meshes on child nodes.
+
+  /** Weight for one target by name. Unknown names are ignored, as natively. */
+  setMorphTargetWeight(node: ViroHandle, target: string, weight: number): boolean {
+    if (typeof this.m.viroSetMorphTargetWeight !== "function") return false;
+    this.m.viroSetMorphTargetWeight(node, target, weight);
+    return true;
+  }
+
+  /** The names this model morphs by, sorted, deduplicated across its meshes. */
+  getMorphTargetKeys(node: ViroHandle): string[] {
+    if (typeof this.m.viroGetMorphTargetKeys !== "function") return [];
+    return this.m.viroGetMorphTargetKeys(node) ?? [];
+  }
+
+  /**
+   * Where the blending runs: "cpu", "gpu" or "hybrid", the same strings native
+   * takes. Returns whether every morpher accepted it — the GPU path needs vertex
+   * attributes a model may not have left, and virocore refuses rather than
+   * degrade silently.
+   */
+  setMorphMode(node: ViroHandle, mode: "cpu" | "gpu" | "hybrid"): boolean {
+    if (typeof this.m.viroSetMorphMode !== "function") return false;
+    return this.m.viroSetMorphMode(node, mode);
+  }
+
+  /**
+   * What the WASM binary is: the virocore commit it was built from, whether that
+   * tree was dirty, and when. Empty from a binary built before the stamp existed.
+   *
+   * The binary is copied by hand out of virocore into this package and from here
+   * into an app's node_modules, so by the time a bug report arrives nothing
+   * around the file says where it came from. Asking it directly is the only
+   * answer that cannot have drifted.
+   */
+  getBuildId(): string {
+    if (typeof this.m.viroGetBuildId !== "function") return "";
+    return this.m.viroGetBuildId();
+  }
+
+  /**
+   * The tone curve alone. This is the switch a caller wants when the curve is
+   * the problem: HDR carries PBR with it (virocore's isPBREnabled is
+   * `_hdrEnabled && _pbrEnabled`), so switching HDR off to lose Hable also drops
+   * every glTF material back to Blinn, where its default specular renders it
+   * white. Native's ViroScene has said this as `toneMappingEnabled` all along.
+   */
+  setToneMappingEnabled(enabled: boolean): boolean {
+    if (typeof this.m.viroSetToneMappingEnabled !== "function") return false;
+    this.m.viroSetToneMappingEnabled(enabled);
+    return true;
+  }
+
+  // --- Physics ---
+  //
+  // Bullet ships inside the binary and nothing reached it until these existed.
+  //
+  // `setPhysicsWorld(false, …)` is a real instruction and not a no-op: it
+  // detaches every body. virocore creates a physics world on demand and steps
+  // whatever it holds, so a scene whose author switched physics off would
+  // otherwise simulate at the engine's own gravity.
+  setPhysicsWorld(enabled: boolean, gravity: [number, number, number]): boolean {
+    if (typeof this.m.viroSetPhysicsWorld !== "function") return false;
+    this.m.viroSetPhysicsWorld(enabled, gravity[0], gravity[1], gravity[2]);
+    return true;
+  }
+  /** `tag` is what a collision reports as the other party. */
+  setPhysicsBody(
+    node: ViroHandle,
+    type: ViroPhysicsBodyType,
+    mass: number,
+    shapeType: ViroPhysicsShapeType,
+    shapeParams: number[],
+    tag: string,
+  ): boolean {
+    if (typeof this.m.viroSetPhysicsBody !== "function") return false;
+    this.m.viroSetPhysicsBody(node, type, mass, shapeType, shapeParams, tag);
+    return true;
+  }
+  setPhysicsBodyProperties(
+    node: ViroHandle,
+    restitution: number,
+    friction: number,
+    useGravity: boolean,
+  ): void {
+    if (typeof this.m.viroSetPhysicsBodyProperties !== "function") return;
+    this.m.viroSetPhysicsBodyProperties(node, restitution, friction, useGravity);
+  }
+  /**
+   * `isConstant: false` is the instant latch the next physics step consumes
+   * once. A constant velocity is reasserted on the rigid body every frame and
+   * gravity never gets a turn, so a launched object climbs forever — which is
+   * why Studio sends its velocity as an instant one.
+   */
+  setPhysicsVelocity(
+    node: ViroHandle,
+    velocity: [number, number, number],
+    isConstant = false,
+  ): void {
+    if (typeof this.m.viroSetPhysicsVelocity !== "function") return;
+    this.m.viroSetPhysicsVelocity(node, velocity[0], velocity[1], velocity[2], isConstant);
+  }
+  applyPhysicsImpulse(node: ViroHandle, impulse: [number, number, number]): void {
+    if (typeof this.m.viroApplyPhysicsImpulse !== "function") return;
+    this.m.viroApplyPhysicsImpulse(node, impulse[0], impulse[1], impulse[2]);
+  }
+  applyPhysicsTorque(node: ViroHandle, torque: [number, number, number]): void {
+    if (typeof this.m.viroApplyPhysicsTorque !== "function") return;
+    this.m.viroApplyPhysicsTorque(node, torque[0], torque[1], torque[2]);
+  }
+  clearPhysicsBody(node: ViroHandle): void {
+    if (typeof this.m.viroClearPhysicsBody !== "function") return;
+    this.m.viroClearPhysicsBody(node);
+  }
+  /** One callback for the whole scene; pass null to stop listening. */
+  setCollisionHandler(handler: ((collision: ViroCollision) => void) | null): boolean {
+    if (typeof this.m.viroSetCollisionCallback !== "function") return false;
+    this.m.viroSetCollisionCallback((tag, otherTag, px, py, pz, nx, ny, nz) => {
+      handler?.({ tag, otherTag, point: [px, py, pz], normal: [nx, ny, nz] });
+    });
+    return true;
   }
 
   // --- Textures ---
@@ -493,6 +800,49 @@ export class ViroSceneApi {
       vxz,
     );
   }
+  /** Acceleration on a running emitter, as a [min, max] range like velocity. */
+  setParticleAcceleration(
+    node: ViroHandle,
+    min: [number, number, number],
+    max: [number, number, number],
+  ): void {
+    if (typeof this.m.viroSetParticleAcceleration !== "function") return;
+    this.m.viroSetParticleAcceleration(node, min[0], min[1], min[2], max[0], max[1], max[2]);
+  }
+  /**
+   * How one of a particle's visual properties behaves over its life: an initial
+   * [min, max] range to randomise from, what to interpolate against, and the
+   * points to interpolate towards.
+   *
+   * Without these an emitter draws every particle at full opacity and one size
+   * until it expires, so smoke never thins and a spark never shrinks.
+   *
+   * `intervals` is flattened at VIRO_PARTICLE_INTERVAL_STRIDE floats per point,
+   * and virocore drops a trailing partial entry rather than reading past it.
+   */
+  setParticleModifier(
+    node: ViroHandle,
+    property: ViroParticleProperty,
+    min: [number, number, number],
+    max: [number, number, number],
+    factor: ViroParticleFactor,
+    intervals: number[],
+  ): boolean {
+    if (typeof this.m.viroSetParticleModifier !== "function") return false;
+    this.m.viroSetParticleModifier(
+      node,
+      property,
+      min[0],
+      min[1],
+      min[2],
+      max[0],
+      max[1],
+      max[2],
+      factor,
+      intervals,
+    );
+    return true;
+  }
   setParticleEmitterRun(node: ViroHandle, run: boolean): void {
     this.m.viroSetParticleEmitterRun(node, run);
   }
@@ -524,6 +874,43 @@ export class ViroSceneApi {
   }
   setLightCastsShadow(light: ViroHandle, castsShadow: boolean): void {
     this.m.viroSetLightCastsShadow(light, castsShadow);
+  }
+  /** Pairs with a node's lightReceivingBitMask: both must intersect to light it. */
+  setLightInfluenceBitMask(light: ViroHandle, mask: number): void {
+    if (typeof this.m.viroSetLightInfluenceBitMask !== "function") return;
+    this.m.viroSetLightInfluenceBitMask(light, mask);
+  }
+  /**
+   * Shadow tuning. `castsShadow` decides whether a light casts at all; these
+   * decide whether the result is usable — too small a map or too low a bias is
+   * the difference between a shadow and a field of acne.
+   *
+   * No orthographic position: the native navigators take one but VROLight has no
+   * setter for it, so there is nowhere to forward it.
+   */
+  setLightShadowOpacity(light: ViroHandle, opacity: number): void {
+    if (typeof this.m.viroSetLightShadowOpacity !== "function") return;
+    this.m.viroSetLightShadowOpacity(light, opacity);
+  }
+  setLightShadowMapSize(light: ViroHandle, size: number): void {
+    if (typeof this.m.viroSetLightShadowMapSize !== "function") return;
+    this.m.viroSetLightShadowMapSize(light, size);
+  }
+  setLightShadowBias(light: ViroHandle, bias: number): void {
+    if (typeof this.m.viroSetLightShadowBias !== "function") return;
+    this.m.viroSetLightShadowBias(light, bias);
+  }
+  setLightShadowNearZ(light: ViroHandle, nearZ: number): void {
+    if (typeof this.m.viroSetLightShadowNearZ !== "function") return;
+    this.m.viroSetLightShadowNearZ(light, nearZ);
+  }
+  setLightShadowFarZ(light: ViroHandle, farZ: number): void {
+    if (typeof this.m.viroSetLightShadowFarZ !== "function") return;
+    this.m.viroSetLightShadowFarZ(light, farZ);
+  }
+  setLightShadowOrthographicSize(light: ViroHandle, size: number): void {
+    if (typeof this.m.viroSetLightShadowOrthographicSize !== "function") return;
+    this.m.viroSetLightShadowOrthographicSize(light, size);
   }
   addLightToNode(node: ViroHandle, light: ViroHandle): void {
     this.m.viroAddLightToNode(node, light);
