@@ -22,8 +22,8 @@ function resolveAssetBase(baseUrl?: string): string {
 /**
  * Load and instantiate the WASM renderer module.
  *
- * The Emscripten glue (viro-web.js) is imported dynamically so bundlers treat it
- * as an async chunk and the ~2MB payload is only fetched on demand. The
+ * The Emscripten glue (viro-web.js) is fetched from the asset base at runtime
+ * rather than bundled, so the ~2MB payload is only paid for on demand. The
  * .wasm/.data sidecars are located from the same base (see resolveAssetBase).
  */
 export interface LoadOptions {
@@ -50,7 +50,12 @@ export async function loadViroWebModule(
     imported = await opts.importGlue();
   } else {
     const glueUrl = base + "viro-web.js";
-    imported = await import(/* webpackIgnore: true */ /* @vite-ignore */ glueUrl);
+    // Indirect so no bundler parses a non-literal import(). Metro rejects one
+    // outright, and strips the webpackIgnore comment before it would help.
+    const importModule = new Function("u", "return import(u)") as (
+      u: string,
+    ) => Promise<{ default?: ViroWebModuleFactory } | ViroWebModuleFactory>;
+    imported = await importModule(glueUrl);
   }
 
   const factory = ((imported as { default?: ViroWebModuleFactory }).default ??

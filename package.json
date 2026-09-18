@@ -1,6 +1,6 @@
 {
   "name": "@reactvision/viro-web-renderer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "WebAssembly/WebGL2 build of the Viro renderer (virocore) for the web platform",
   "license": "MIT",
   "author": "ReactVision",
