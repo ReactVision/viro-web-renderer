@@ -16,7 +16,7 @@ surprised by it.
 
 ### Fixed before publishing
 
-Two things that would each have made this release wrong.
+Three things that would each have made this release wrong.
 
 The binary shipped Helvetica, baked into `viro-web.data` by the preload step and
 therefore redistributed with the package. It renders in **Roboto** now, which is
@@ -29,6 +29,15 @@ bindings — the physics and light-shadow calls, the particle and collision ones
 existed in `types.ts` and in no build. Every one of them would have been
 `undefined` at runtime. Rebuilt from virocore; the package's own test now
 checks all 126, and that the preloaded font is one this package may ship.
+
+And the glue module could not be bundled by Metro. `loadViroWebModule` reached
+it through a variable specifier, which Metro refuses at build time, and the
+`webpackIgnore` comment that was there to excuse it is stripped by
+`babel-preset-expo` before Metro's dependency collector runs. So an Expo web app
+did not fail at runtime against this package, it failed to build at all. The
+import goes through an indirection now, which no bundler parses. That
+indirection needs `unsafe-eval`, so a page under a strict CSP should pass
+`importGlue` instead.
 
 ### Added
 
