@@ -14,6 +14,22 @@ Everything below happened between the last internal build and this publish, and
 is listed because someone tracking the package from inside will otherwise be
 surprised by it.
 
+### Fixed before publishing
+
+Two things that would each have made this release wrong.
+
+The binary shipped Helvetica, baked into `viro-web.data` by the preload step and
+therefore redistributed with the package. It renders in **Roboto** now, which is
+Apache 2.0 and is also what Viro renders text in on Android and Quest — so the
+web player agrees with them instead of being a third typeface. The data blob
+drops from 2.3 MB to 389 KB.
+
+And the compiled module was older than the API declared over it: eleven
+bindings — the physics and light-shadow calls, the particle and collision ones —
+existed in `types.ts` and in no build. Every one of them would have been
+`undefined` at runtime. Rebuilt from virocore; the package's own test now
+checks all 126, and that the preloaded font is one this package may ship.
+
 ### Added
 
 - **The tracking engine ships with the package.** Web AR needed a second WASM

@@ -56,14 +56,31 @@ if (!haveWasm) {
   assert.deepEqual(missing, [], "types.ts declares bindings the binary does not export");
   console.log(`  ok  all ${new Set(declared).size} declared bindings exist in viro-web.wasm`);
 
-  // A font is preloaded. Which font is an open question for the team; that the
-  // renderer has one at all is not -- ViroText aborts at runtime without it.
-  const data = read("wasm/viro-web.data").toString("latin1");
+  // A font is preloaded, and it is one this package is allowed to redistribute.
+  // ViroText aborts at runtime without a font at all, and a font we cannot ship
+  // is what held this package at unpublished -- so both halves are asserted.
+  //
+  // Read from the glue's preload manifest rather than by grepping the blob: the
+  // packer does not keep the face's own name tables as plain text, so searching
+  // the data for "Roboto" finds nothing even when it is right there.
+  const preloaded = [...glue.matchAll(/filename:"(\/[^"]+\.tt[fc])"/g)].map((m) => m[1]);
+  assert.ok(preloaded.length > 0, "viro-web.data preloads no font -- ViroText would abort at runtime");
+
+  const BANNED = /Helvetica|Times|Geneva|Menlo|SFNS|\.ttc$/i;
+  for (const font of preloaded) {
+    assert.ok(
+      !BANNED.test(font),
+      `${font} is a system face this package may not redistribute -- see THIRD-PARTY-LICENSES.md`,
+    );
+  }
+
+  // And the bytes really are a font, not an empty placeholder with the right name.
+  const data = read("wasm/viro-web.data");
   assert.ok(
-    /Helvetica|DejaVu Sans/.test(data),
-    "viro-web.data carries no recognisable font -- ViroText would abort at runtime",
+    data.includes(Buffer.from([0x00, 0x01, 0x00, 0x00])) || data.includes(Buffer.from("OTTO")),
+    "viro-web.data names a font but carries no TrueType or OpenType data",
   );
-  console.log("  ok  a font is preloaded in viro-web.data");
+  console.log(`  ok  ${preloaded.join(", ")} preloaded, and redistributable`);
 }
 
 const pkg = JSON.parse(read("package.json").toString());

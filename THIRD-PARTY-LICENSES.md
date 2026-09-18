@@ -2,7 +2,8 @@
 
 `@reactvision/viro-web-renderer` is MIT (see `LICENSE`). The package also ships
 prebuilt binaries — `wasm/viro-web.*` and the tinyvio tracking engine under
-`slam/` — that contain code from the projects below. tinyvio is ReactVision's
+`slam/` — that contain code from the projects below, and a font baked into
+`wasm/viro-web.data`. tinyvio is ReactVision's
 own and MIT-licensed, with no third-party code in its core; everything listed
 here is linked into the renderer. Those projects' licences permit
 redistribution and require that their notices travel with the binary, which is
@@ -39,6 +40,23 @@ This software is based in part on the work of the Independent JPEG Group.
 > (3) Permission for use of this software is granted only if the user accepts
 > full responsibility for any undesirable consequences; the authors accept
 > NO LIABILITY for damages of any kind.
+
+---
+
+## Roboto
+
+The typeface every text geometry renders in, baked into `wasm/viro-web.data`
+and therefore redistributed with this package. Roboto is also what Viro renders
+text in on Android and Quest, so the three agree.
+
+Copyright the Roboto Project Authors, licensed under the Apache License,
+Version 2.0. You may obtain a copy of the licence at
+<http://www.apache.org/licenses/LICENSE-2.0>.
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the Licence for the
+specific language governing permissions and limitations under it.
 
 ---
 
