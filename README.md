@@ -45,6 +45,7 @@ The renderer is `virocore`, the same C++ engine ViroReact runs natively on iOS a
 - **Scene graph** — a handle-based C API (`ViroSceneApi`) that the ViroReact web bridge's reconciler drives from your JSX. Nodes, geometries, materials, lights, textures, portals, particles and animations are all created and mutated through opaque integer handles owned by the WASM module.
 - **AR** — poses come from tinyvio, a second WASM module, running in JS alongside this one. `ViroArSession` captures the camera and IMU, feeds the tracker, converts the pose from the tracker's Z-up/OpenCV frame into virocore's Y-up/GL frame, and injects it through the AR scene API.
 - **Assets** — the module is three files: `viro-web.js` (glue), `viro-web.wasm`, and `viro-web.data` (preloaded shaders and font). All three must be reachable at runtime; see [Bundler integration](#bundler-integration).
+- **Text renders in Roboto**, preloaded into `viro-web.data` and redistributed with this package under the Apache 2.0 licence. It is the same face Viro renders text in on Android and Quest, so the three agree; iOS uses the system font.
 
 ## Installation
 
@@ -160,6 +161,26 @@ config.resolver.assetExts.push("wasm", "data");
 ```
 
 Then serve the three files from a known path — copy them to the app's `public/` — and set `assetBaseUrl` to that directory. Metro's asset pipeline for arbitrary imported binaries is less flexible than webpack's or Vite's, so `assetBaseUrl` is the most reliable route there.
+
+The glue is fetched at runtime rather than bundled, and on Metro it has to be:
+a dynamic `import()` with a non-literal specifier is rejected at build time, and
+the `webpackIgnore` comment that excuses it elsewhere is stripped by
+`babel-preset-expo` before Metro's dependency collector runs. The loader
+therefore reaches it through an indirection no bundler parses, so an Expo web
+app builds without any configuration beyond the two lines above.
+
+**That indirection needs `unsafe-eval`.** Under a strict Content-Security-Policy,
+pass `importGlue` instead and let your own bundler resolve the module:
+
+```js
+import glueUrl from "@reactvision/viro-web-renderer/wasm/viro-web.js?url";
+
+await ViroWebRenderer.create({
+  canvas,
+  importGlue: () => import(/* @vite-ignore */ glueUrl),
+  assetBaseUrl: "/wasm/",
+});
+```
 
 ## AR (`ViroArSession`)
 
