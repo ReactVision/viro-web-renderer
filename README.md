@@ -40,7 +40,7 @@ Single-threaded — no pthreads, so `SharedArrayBuffer` and COOP/COEP headers ar
 
 ## How it works
 
-The renderer is `virocore`, the same C++ engine ViroReact runs natively on iOS and Android, compiled to WebAssembly and drawing through WebGL2. It draws; it does not track.
+The renderer is `virocore`, the same C++ engine ViroReact runs natively on iOS, Android, Apple Vision Pro and Meta Quest, compiled to WebAssembly and drawing through WebGL2. It draws; it does not track.
 
 - **Scene graph** — a handle-based C API (`ViroSceneApi`) that the ViroReact web bridge's reconciler drives from your JSX. Nodes, geometries, materials, lights, textures, portals, particles and animations are all created and mutated through opaque integer handles owned by the WASM module.
 - **AR** — poses come from tinyvio, a second WASM module, running in JS alongside this one. `ViroArSession` captures the camera and IMU, feeds the tracker, converts the pose from the tracker's Z-up/OpenCV frame into virocore's Y-up/GL frame, and injects it through the AR scene API.
