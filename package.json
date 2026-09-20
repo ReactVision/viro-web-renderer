@@ -35,7 +35,8 @@
     "slam",
     "LICENSE",
     "THIRD-PARTY-LICENSES.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "RELEASE_NOTES.md"
   ],
   "sideEffects": [
     "*.wasm",
