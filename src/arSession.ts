@@ -1075,10 +1075,10 @@ export class ViroArSession {
     const rgba = ctx.getImageData(0, 0, w, h).data;
 
     // A frame the tracker did not hold has no pose worth drawing against.
-    // Reporting Limited hides the scene and leaves the camera feed alone, which
-    // is what a device does and what an honest preview should show.
+    // Unavailable holds the last tracked pose, which is what the live path does
+    // through a dropout. (Limited would now apply this frame's rotation.)
     const state = frame.tracked === false
-      ? ViroTrackingState.Limited
+      ? ViroTrackingState.Unavailable
       : ViroTrackingState.Normal;
     // The pose describes the sensor-native camera; the background is the
     // rotated frame. Roll the camera to match, or content renders in the right
