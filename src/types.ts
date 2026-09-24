@@ -190,6 +190,10 @@ export interface ViroWebModule {
   viroSetTextureFilter(texture: number, min: number, mag: number, mip: number): void;
   viroSetMaterialTexture(material: number, channel: number, texture: number): void;
   viroDestroyTexture(texture: number): void;
+  // A texture the GPU fills straight from a <video>/<canvas>/ImageBitmap/VideoFrame,
+  // with no readback and no copy through the heap. Absent from builds before it.
+  viroCreateSourceTexture?(sRGB: boolean): number;
+  viroUpdateTextureFromSource?(texture: number, source: TexImageSource): boolean;
   // Cube texture from six RGBA8 faces (+X,-X,+Y,-Y,+Z,-Z). For skyboxes.
   viroCreateTextureCubeRGBA(
     px: Uint8Array | number[],

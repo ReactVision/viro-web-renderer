@@ -697,6 +697,23 @@ export class ViroSceneApi {
   destroyTexture(texture: ViroHandle): void {
     this.m.viroDestroyTexture(texture);
   }
+  /**
+   * A texture the GPU fills straight from a `<video>`, `<canvas>`, ImageBitmap
+   * or VideoFrame (see updateTextureFromSource). Returns VIRO_INVALID_HANDLE
+   * (0) on a renderer build that predates it; fall back to createTextureRGBA.
+   */
+  createSourceTexture(sRGB: boolean): ViroHandle {
+    if (typeof this.m.viroCreateSourceTexture !== "function") return 0;
+    return this.m.viroCreateSourceTexture(sRGB);
+  }
+  /**
+   * Upload the source's current frame into a texture from createSourceTexture.
+   * The size follows the source. False when the source has no frame yet.
+   */
+  updateTextureFromSource(texture: ViroHandle, source: TexImageSource): boolean {
+    if (typeof this.m.viroUpdateTextureFromSource !== "function") return false;
+    return this.m.viroUpdateTextureFromSource(texture, source);
+  }
 
   // --- Background (skybox / 360) ---
   /** Six RGBA8 faces in +X,-X,+Y,-Y,+Z,-Z order, each width*height*4 bytes. */
