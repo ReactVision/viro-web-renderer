@@ -7,6 +7,7 @@ import {
   type ViroNodeEventHandlers,
   type ViroAnimationHandlers,
 } from "./sceneApi.js";
+import { ViroRendererAbortError } from "./types.js";
 import type { ViroWebModule, ViroWebRendererOptions } from "./types.js";
 
 const MODEL_EXT: Record<ViroModelFormat, string> = {
@@ -79,6 +80,8 @@ export class ViroWebRenderer {
   private readonly eventHandlers = new Map<ViroHandle, ViroNodeEventHandlers>();
   private readonly modelLoadResolvers = new Map<ViroHandle, (success: boolean) => void>();
   private readonly animationHandlers = new Map<ViroHandle, ViroAnimationHandlers>();
+  private readonly abortListeners = new Set<(error: ViroRendererAbortError) => void>();
+  private abortError: ViroRendererAbortError | null = null;
 
   private constructor(
     private readonly module: ViroWebModule,
@@ -237,14 +240,19 @@ export class ViroWebRenderer {
     canvas.width = width;
     canvas.height = height;
 
+    // The runtime can abort before there is a renderer to tell (during init);
+    // create() then rejects on its own and there is no one else to notify.
+    let renderer: ViroWebRenderer | undefined;
     const module = await loadViroWebModule(canvas, {
       locateFile: options.locateFile,
       baseUrl: options.assetBaseUrl,
       importGlue: options.importGlue,
+      onAbort: (what) => renderer?.handleAbort(what),
     });
     module.initViroScene(selector, width, height);
 
-    const renderer = new ViroWebRenderer(module, canvas);
+    renderer = new ViroWebRenderer(module, canvas);
+    if (options.onAbort) renderer.addAbortListener(options.onAbort);
     // Once, at startup: what a bug report needs pasted back and cannot find
     // anywhere else, since the binary reaches an app through two hand copies.
     const buildId = renderer.scene.getBuildId();
@@ -324,6 +332,49 @@ export class ViroWebRenderer {
     this.eventHandlers.clear();
     this.animationHandlers.clear();
     this.disposed = true;
+  }
+
+  /**
+   * Set once the WASM runtime has aborted (see ViroWebRendererOptions.onAbort).
+   * A renderer in that state cannot recover; a new one has to be created.
+   */
+  get abortedWith(): ViroRendererAbortError | null {
+    return this.abortError;
+  }
+
+  /**
+   * Be told when the runtime aborts. Called at most once per renderer, and
+   * straight away when it already has. Returns an unsubscribe.
+   */
+  addAbortListener(listener: (error: ViroRendererAbortError) => void): () => void {
+    if (this.abortError) {
+      listener(this.abortError);
+      return () => {};
+    }
+    this.abortListeners.add(listener);
+    return () => {
+      this.abortListeners.delete(listener);
+    };
+  }
+
+  private handleAbort(what: unknown): void {
+    if (this.abortError) return;
+    // Emscripten passes "OOM" for a heap that could not grow and nothing at all
+    // for most other aborts, a failed allocation past MAXIMUM_MEMORY included.
+    const reason = (what instanceof Error ? what.message : String(what ?? "")) || "unknown";
+    this.abortError = new ViroRendererAbortError(reason);
+    // Nothing in flight can finish: the loader that would call back is gone.
+    for (const resolve of this.modelLoadResolvers.values()) resolve(false);
+    this.modelLoadResolvers.clear();
+    const listeners = [...this.abortListeners];
+    this.abortListeners.clear();
+    for (const listener of listeners) {
+      try {
+        listener(this.abortError);
+      } catch (err) {
+        console.error("[Viro web] onAbort listener threw:", err);
+      }
+    }
   }
 
   private assertLive(): void {

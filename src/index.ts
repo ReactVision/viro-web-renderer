@@ -61,6 +61,7 @@ export type {
   ArPlaneAlignment,
   ArHitResult,
 } from "./arSession.js";
+export { ViroRendererAbortError } from "./types.js";
 export type {
   ViroWebModule,
   ViroWebModuleFactory,

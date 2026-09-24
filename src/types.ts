@@ -352,6 +352,9 @@ export interface ViroWebModule {
   };
 
   canvas?: HTMLCanvasElement;
+  // Called by the Emscripten runtime when it aborts (an allocation past
+  // MAXIMUM_MEMORY, a failed assertion). The module is unusable afterwards.
+  onAbort?: (what: unknown) => void;
   // Emscripten runtime internals (locateFile, HEAPU8, etc.) are not typed here.
   [key: string]: unknown;
 }
@@ -383,4 +386,24 @@ export interface ViroWebRendererOptions {
    * dynamically import a runtime URL). See LoadOptions.importGlue.
    */
   importGlue?: () => Promise<{ default?: ViroWebModuleFactory } | ViroWebModuleFactory>;
+  /**
+   * Called once if the WASM runtime aborts — out of memory past the heap's
+   * ceiling, most often. An abort is terminal for this renderer: its main loop
+   * has stopped, every later call into it throws, and the canvas stays as it
+   * was. Nothing else reports it, because the abort surfaces as a rejection a
+   * caller usually catches (a model load) rather than as an uncaught error, so
+   * this is where a host shows a reload prompt or sends it to error tracking.
+   */
+  onAbort?: (error: ViroRendererAbortError) => void;
+}
+
+/** What a renderer's `onAbort` receives: the runtime is dead, not one asset. */
+export class ViroRendererAbortError extends Error {
+  /** The runtime's own reason, e.g. "OOM". */
+  readonly reason: string;
+  constructor(reason: string) {
+    super(`Viro web renderer aborted: ${reason}`);
+    this.name = "ViroRendererAbortError";
+    this.reason = reason;
+  }
 }
