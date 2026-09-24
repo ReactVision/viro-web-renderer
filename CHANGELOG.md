@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.1
 
 Needs the virocore web build from the same change: the new renderer calls are
 absent from 1.0.0's binary, and each falls back to the old path when missing.

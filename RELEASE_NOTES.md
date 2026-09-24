@@ -1,5 +1,23 @@
 # Release Notes
 
+## 1.0.1
+
+Fixes found running the web player against real scenes. The compiled renderer in this release is virocore 3.0.2; the new calls fall back to the old path on an older binary, but the heap, tap and dropout fixes live in the binary and need this one.
+
+### Fixed
+
+- **Large models no longer kill the renderer.** The heap was fixed at 256 MB, and a 30 to 40 MB generated GLB crossed it once decoded; `abort("OOM")` is permanent, so every later call failed and the canvas stayed black. The heap now grows to 2 GB, and glTF loads no longer copy the model.
+- **An abort is reported.** `onAbort` in the options, `renderer.addAbortListener()` and `renderer.abortedWith`. Model loads in flight settle as failed.
+- **Model files leave the virtual FS once loaded,** instead of staying in JS memory for the life of the page.
+- **Taps land where they are drawn.** They were mirrored about the horizontal axis.
+- **Web AR holds its pose through a dropout** instead of snapping to a default orientation. tinyvio's `poseConfidence` decides the state: RotationOnly applies rotation and holds position, None holds the last pose.
+- **The pose is smoothed** with a One Euro filter (`poseSmoothing`, or `false` for the raw solve), and `onStatus` is debounced out of Normal and carries `confidence` and `reason`.
+- **The camera feed draws from the stream** at `feedWidth`/`feedHeight` (default 1280x960) through a source texture, with no per-frame readback; the tracker gets a downscaled copy.
+
+### Added
+
+- `PoseConfidence`, `TrackingReason`, `PoseFilter`, `ViroRendererAbortError`; `ViroSceneApi.createSourceTexture` and `updateTextureFromSource`.
+
 ## 1.0.0
 
 First published release. The Viro renderer — the same C++ engine ViroReact runs natively on iOS, Android, Apple Vision Pro and Meta Quest — compiled to WebAssembly and drawing through WebGL2.
