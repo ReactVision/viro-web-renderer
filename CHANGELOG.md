@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+Needs the virocore web build from the same change: the new renderer calls are
+absent from 1.0.0's binary, and each falls back to the old path when missing.
+
+### Fixed
+
+- **A runtime abort is reported.** `ViroWebRendererOptions.onAbort`, `renderer.addAbortListener()` and `renderer.abortedWith`. An abort — out of memory past the heap's ceiling, most often — is terminal, and it used to surface only as a rejection a model load caught, so nothing reached a host's error tracking. Model loads in flight settle as failed.
+- **Model files are removed from the virtual FS once loaded.** MEMFS holds every file in JS memory until unlinked, so each model stayed resident for the life of the page.
+- **The camera feed is drawn from the stream, not the tracker's buffer.** The stream is requested at `feedWidth`/`feedHeight` (default 1280x960) and uploaded to a source texture straight from the `<video>`; the tracker gets a downscaled copy at `captureWidth` along the stream's aspect. No readback, no per-frame texture. Older renderers keep the RGBA path.
+- **Relocalising frames keep their rotation.** tinyvio's `poseConfidence` now decides the renderer's state: Full or PositionNoScale is Normal, RotationOnly is Limited (rotation applied, position held), None holds the last pose. An engine without it is drawn only while Running.
+- **The pose is smoothed** with a One Euro filter before `arSetPose` (`poseSmoothing`, or `false` for the raw solve). tinyvio does not filter, and the raw pose shook content visibly while tracking was healthy.
+- **`onStatus` is debounced** out of Normal (15 frames) and back at once, and carries the frame's `confidence` and `reason`. `reason === NoGravity` that persists means no motion events are arriving.
+- Playback reports untracked frames as Unavailable, so they hold the last tracked pose as the live path does.
+
+### Added
+
+- `PoseConfidence`, `TrackingReason`, `PoseFilter`, `ViroRendererAbortError`; `ViroSceneApi.createSourceTexture` and `updateTextureFromSource`.
+- `test/session.test.mjs` in `npm test`, and `npm run test:browser`: taps, the heap, the abort, source textures and dropout holding, in a real Chrome. Against 1.0.0's binary nine of its checks fail.
+
 ## 1.0.0
 
 First published release.
