@@ -166,6 +166,7 @@ export class ViroWebRenderer {
     }
     const path = `${dir}/viro_model_${nodeHandle}.${MODEL_EXT[format]}`;
     this.module.FS.writeFile(path, bytes);
+    const written = [path, ...resources.map((res) => `${dir}/${res.name}`)];
     return new Promise<boolean>((resolve) => {
       // One resolver per node, and a second load replaces the first. Settle the
       // one being replaced rather than dropping it: the native callback carries
@@ -174,7 +175,25 @@ export class ViroWebRenderer {
       this.modelLoadResolvers.get(nodeHandle)?.(false);
       this.modelLoadResolvers.set(nodeHandle, resolve);
       this.module.viroLoadModel(nodeHandle, path, format);
-    });
+    }).finally(() => this.unlinkAll(written));
+  }
+
+  /**
+   * The loaders read the virtual FS synchronously and are done with it by the
+   * time the load settles. MEMFS keeps every file in JS memory until unlinked,
+   * so without this each model stayed resident for the life of the page, once
+   * per load.
+   */
+  private unlinkAll(paths: string[]): void {
+    const unlink = this.module.FS.unlink;
+    if (!unlink) return;
+    for (const p of paths) {
+      try {
+        unlink.call(this.module.FS, p);
+      } catch {
+        // Already gone, or a second load into the node replaced it.
+      }
+    }
   }
 
   /**
@@ -186,7 +205,12 @@ export class ViroWebRenderer {
     const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
     const path = `/viro_env_${lightingEnvCounter++}.hdr`;
     this.module.FS.writeFile(path, bytes);
-    const handle = this._scene.loadRadianceHDRTexture(path);
+    let handle: ViroHandle;
+    try {
+      handle = this._scene.loadRadianceHDRTexture(path);
+    } finally {
+      this.unlinkAll([path]);
+    }
     if (handle) this._scene.setLightingEnvironment(handle);
     return handle;
   }
