@@ -48,7 +48,8 @@
   "scripts": {
     "copy-wasm": "bash scripts/copy-wasm.sh",
     "build": "tsc",
-    "test": "node test/hitTest.test.mjs && node test/package.test.mjs",
+    "test": "node test/hitTest.test.mjs && node test/session.test.mjs && node test/package.test.mjs",
+    "test:browser": "node test/browser/run.mjs",
     "clean": "rm -rf dist *.tgz",
     "prepare": "npm run build",
     "prepublishOnly": "npm run copy-wasm && npm run copy-slam && npm run build && VIRO_REQUIRE_WASM=1 npm test",
