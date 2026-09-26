@@ -37,6 +37,8 @@ export interface LoadOptions {
    * `baseUrl`) so the .wasm/.data sidecars resolve correctly.
    */
   importGlue?: () => Promise<{ default?: ViroWebModuleFactory } | ViroWebModuleFactory>;
+  /** Handed to the runtime as Module.onAbort; see ViroWebRendererOptions.onAbort. */
+  onAbort?: (what: unknown) => void;
 }
 
 export async function loadViroWebModule(
@@ -67,6 +69,7 @@ export async function loadViroWebModule(
   const moduleArg: Partial<ViroWebModule> = { canvas };
   (moduleArg as { locateFile?: LocateFile }).locateFile =
     opts.locateFile ?? ((path: string) => base + path);
+  if (opts.onAbort) moduleArg.onAbort = opts.onAbort;
 
   return factory(moduleArg);
 }

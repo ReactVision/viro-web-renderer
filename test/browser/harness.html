@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>viro-web-renderer browser checks</title>
+<style>html,body{margin:0;background:#000}#c{width:512px;height:512px;display:block}</style></head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+import {
+  ViroWebRenderer, ViroEventAction, ViroClickState, ViroLightingModel, ViroTextureChannel,
+} from "/dist/index.js";
+
+const canvas = document.getElementById("c");
+const aborts = [];
+const renderer = await ViroWebRenderer.create({
+  canvas, width: 512, height: 512, assetBaseUrl: "/wasm/",
+  onAbort: (e) => aborts.push(e.reason),
+});
+const scene = renderer.scene;
+const root = scene.getRootNode();
+
+function box(x, y, z, size) {
+  const node = scene.createNode();
+  const geo = scene.createBox(size, size, size);
+  const mat = scene.createMaterial();
+  scene.setMaterialLightingModel(mat, ViroLightingModel.Constant);
+  scene.setMaterialDiffuseColor(mat, 1, 1, 1, 1);
+  scene.setGeometryMaterial(geo, mat);
+  scene.setNodeGeometry(node, geo);
+  scene.setNodePosition(node, x, y, z);
+  scene.addChildNode(root, node);
+  return { node, mat };
+}
+
+// A box in the top quarter of the viewport: at -4 m a 60-degree frustum's half
+// height is 2.31 m, so y = +1.2 m draws at ~24% from the top.
+const target = box(0, 1.2, -4, 0.8);
+let clicks = 0;
+// onClick reports every state (down, up, clicked); a tap is one Clicked.
+renderer.setNodeEventHandlers(target.node, {
+  onClick: (state) => { if (state === ViroClickState.Clicked) clicks++; },
+});
+scene.setNodeEventEnabled(target.node, ViroEventAction.Click, true);
+
+window.viroChecks = {
+  clicks: () => clicks,
+  aborts: () => aborts.slice(),
+  abortedWith: () => renderer.abortedWith?.reason ?? null,
+
+  // Hold `count` textures of `mb` MB each in the heap; each upload copies
+  // its bytes into WASM memory and VROData keeps them.
+  allocate(count, mb) {
+    const bytes = new Uint8Array(mb * 1024 * 1024);
+    const side = Math.floor(Math.sqrt(bytes.length / 4));
+    const handles = [];
+    for (let i = 0; i < count; i++) {
+      handles.push(scene.createTextureRGBA(bytes.subarray(0, side * side * 4), side, side, true));
+    }
+    return handles.length;
+  },
+
+  // A red 2D canvas drawn onto a box in front of the camera through a source texture.
+  sourceTexture() {
+    const src = document.createElement("canvas");
+    src.width = 64; src.height = 32;
+    const ctx = src.getContext("2d");
+    ctx.fillStyle = "#ff0000"; ctx.fillRect(0, 0, 64, 32);
+    const tex = scene.createSourceTexture(true);
+    if (!tex) return { created: false };
+    const first = scene.updateTextureFromSource(tex, src);
+    ctx.fillStyle = "#00ff00"; ctx.fillRect(0, 0, 64, 32);
+    const second = scene.updateTextureFromSource(tex, src); // same size: texSubImage2D path
+    const { mat } = box(0, -1.2, -4, 0.8);
+    scene.setMaterialTexture(mat, ViroTextureChannel.Diffuse, tex);
+    return { created: true, first, second };
+  },
+};
+// The same top-red / bottom-blue image through both texture paths, side by
+// side: the source path must come out the same way up as the byte path, which
+// is the orientation the camera feed has always had.
+window.viroChecks.orientation = () => {
+  const src = document.createElement("canvas");
+  src.width = 32; src.height = 32;
+  const ctx = src.getContext("2d");
+  ctx.fillStyle = "#ff0000"; ctx.fillRect(0, 0, 32, 16);
+  ctx.fillStyle = "#0000ff"; ctx.fillRect(0, 16, 32, 16);
+  const rgba = ctx.getImageData(0, 0, 32, 32).data;
+  const bytes = scene.createTextureRGBA(new Uint8Array(rgba), 32, 32, true);
+  const fromSource = scene.createSourceTexture(true);
+  scene.updateTextureFromSource(fromSource, src);
+  const a = box(-1.2, 0, -4, 1.4);
+  const b = box(1.2, 0, -4, 1.4);
+  scene.setMaterialTexture(a.mat, ViroTextureChannel.Diffuse, bytes);
+  scene.setMaterialTexture(b.mat, ViroTextureChannel.Diffuse, fromSource);
+};
+// AR pose injection, for the dropout checks. initAR switches this renderer to
+// the AR draw path for good, so the runner uses a fresh page for it.
+let arStarted = false;
+window.viroChecks.arPose = (state, yawDeg) => {
+  if (!arStarted) { scene.initAR(); arStarted = true; }
+  const a = (yawDeg * Math.PI) / 180;
+  scene.arSetPose(0, Math.sin(a / 2), 0, Math.cos(a / 2), 0, 0, 0, state);
+};
+window.viroReady = true;
+</script>
+</body>
+</html>

@@ -20,15 +20,14 @@
 import { loadBundledSlam, slamLocateFile } from "./slamLoader.js";
 import type { ViroSceneApi } from "./sceneApi.js";
 import { ViroTrackingState } from "./sceneApi.js";
+import { PoseFilter, type PoseFilterOptions } from "./poseFilter.js";
 
 /**
  * The raw tracking engine (embind class "SlamEngine"; see tinyvio's
  * platforms/slam/slam_web_bindings.cpp). Only the members we drive are typed.
  *
- * tinyvio binds three members beyond these — poseConfidence, trackingReason and
- * groundIsEstimated — that this session does not yet surface. They are not new
- * estimation; they are states the engine was already in and had no way to say
- * out loud. See the note on `onStatus` for what that currently costs.
+ * poseConfidence and trackingReason are optional because only tinyvio binds
+ * them; an engine without them is driven from getStatus alone.
  */
 export interface SlamEngine {
   configure(
@@ -69,6 +68,10 @@ export interface SlamEngine {
   posePz(): number;
   trackingQuality(): number;
   getStatus(): number;
+  /** 0 none, 1 rotation-only, 2 position without scale, 3 full. See PoseConfidence. */
+  poseConfidence?(): number;
+  /** Why tracking is degraded; see TrackingReason. 0 when all is well. */
+  trackingReason?(): number;
   // Planes (fetch then read by index; all in the tracker's Z-up world space).
   fetchPlanes(maxPlanes: number): number;
   planeId(i: number): number;
@@ -104,6 +107,28 @@ export interface SlamWasmModule {
 export type SlamWasmFactory = (moduleArg?: Record<string, unknown>) => Promise<SlamWasmModule>;
 
 /** slam_get_status() values (SlamCStatus in slam_c_api.h). */
+/** How much of the pose tinyvio vouches for (TinyvioPoseConfidence). */
+export enum PoseConfidence {
+  None = 0,
+  /** Orientation is sound (kept from the gyro); position is held, not measured. */
+  RotationOnly = 1,
+  PositionNoScale = 2,
+  Full = 3,
+}
+
+/** Why tracking is degraded (TinyvioTrackingReason). */
+export enum TrackingReason {
+  None = 0,
+  /** No gravity yet: no motion events have arrived, or they are still settling. */
+  NoGravity = 1,
+  /** Move sideways; turning on the spot never initialises a monocular tracker. */
+  InsufficientParallax = 2,
+  InsufficientFeatures = 3,
+  InsufficientLight = 4,
+  ExcessiveMotion = 5,
+  PoseSolveFailed = 6,
+}
+
 export enum SlamStatus {
   Uninitialized = 0,
   Initializing = 1,
@@ -245,9 +270,23 @@ export interface ViroArSessionOptions {
    * CDN. Also settable globally via `globalThis.VIRO_SLAM_ASSET_BASE`.
    */
   slamBaseUrl?: string;
-  /** Requested capture size (device may pick the nearest supported). Default 640x480. */
+  /**
+   * The frame size the tracker solves on, in pixels along the long axis first.
+   * Default 640x480. The tracker processes every pixel on the main thread each
+   * frame, so this is a cost, not a quality setting: the camera feed on screen
+   * comes from the stream (`feedWidth`/`feedHeight`), not from this. The height
+   * follows the stream's aspect, so a 16:9 stream tracks at 640x360.
+   */
   captureWidth?: number;
   captureHeight?: number;
+  /**
+   * The camera stream requested for display. Default 1280x960. On a renderer
+   * with source textures the feed is drawn from the stream at this size,
+   * straight from the <video>; the tracker gets its own downscaled copy. On an
+   * older renderer the feed falls back to the tracker's frame.
+   */
+  feedWidth?: number;
+  feedHeight?: number;
   /** Camera facing; default "environment" (rear camera). */
   facingMode?: "environment" | "user";
   /**
@@ -285,18 +324,30 @@ export interface ViroArSessionOptions {
   /** Max planes to fetch per update when detectPlanes is on. Default 10. */
   maxPlanes?: number;
   /**
-   * Reported each frame with the tracking state and quality [0,1].
-   *
-   * The state is the engine's coarse status mapped onto virocore's three
-   * values, and it is coarser than what tinyvio knows. A `Normal` can be a pose
-   * that is six-degree-of-freedom but not yet metric: content placed by
-   * `hitTest` is right, content placed at "1.5 metres" is not. tinyvio exposes
-   * that distinction as `poseConfidence`, and whether a reported ground plane
-   * was detected or assumed as `groundIsEstimated`; neither is surfaced here
-   * yet. Until they are, treat `Normal` as "drawing is reasonable", not as "the
-   * world is measured".
+   * Smooth the pose before it reaches the renderer (One Euro filter), or
+   * `false` to pass the raw solve through. On by default: tinyvio does not
+   * filter, and the raw pose shakes content visibly even while tracking is
+   * healthy.
    */
-  onStatus?: (state: ViroTrackingState, quality: number) => void;
+  poseSmoothing?: PoseFilterOptions | false;
+  /**
+   * Reported each frame with the tracking state and quality [0,1], and the
+   * engine's graded detail when it has one.
+   *
+   * The state is debounced: it drops out of Normal only after tracking has
+   * stayed degraded for a moment, and comes back at once, so a UI bound to it
+   * does not flash through every short dropout. `confidence` and `reason` are
+   * the frame's own, undebounced. A `Normal` can still be a pose that is
+   * six-degree-of-freedom but not yet metric (`PositionNoScale`): content
+   * placed by `hitTest` is right, content placed at "1.5 metres" is not.
+   * `reason === NoGravity` for more than a moment means no motion events are
+   * arriving, and without them the tracker never starts.
+   */
+  onStatus?: (
+    state: ViroTrackingState,
+    quality: number,
+    detail?: { confidence: PoseConfidence; reason: TrackingReason },
+  ) => void;
   /** Called when the set of detected planes changes (added/removed/moved). */
   onAnchorsUpdated?: (anchors: ArPlaneAnchor[]) => void;
   /** Called once if starting fails (permissions, no camera, engine load error). */
@@ -459,6 +510,30 @@ function slamPlaneAlignment(type: number): ArPlaneAlignment {
   }
 }
 
+/**
+ * The state the renderer draws with, which is not the one a UI shows.
+ *
+ * virocore applies the full pose on Normal, keeps the rotation and holds the
+ * position on Limited, and holds both on Unavailable. tinyvio grades its pose, so
+ * a relocalising frame whose rotation is still sound goes through as Limited
+ * instead of being thrown away. An engine that cannot grade is trusted only when
+ * it says Running; everything else holds.
+ */
+function rendererTrackingState(
+  state: ViroTrackingState,
+  confidence: PoseConfidence | undefined,
+): ViroTrackingState {
+  if (confidence === undefined) {
+    return state === ViroTrackingState.Normal ? ViroTrackingState.Normal : ViroTrackingState.Unavailable;
+  }
+  if (confidence >= PoseConfidence.PositionNoScale) return ViroTrackingState.Normal;
+  if (confidence === PoseConfidence.RotationOnly) return ViroTrackingState.Limited;
+  return ViroTrackingState.Unavailable;
+}
+
+/** Consecutive degraded frames before the reported state leaves Normal. */
+const STATUS_DEBOUNCE_FRAMES = 15;
+
 function slamStatusToTrackingState(status: number): ViroTrackingState {
   switch (status) {
     case SlamStatus.Running:
@@ -558,6 +633,13 @@ export class ViroArSession {
   private imuHandler: ((e: DeviceMotionEvent) => void) | null = null;
 
   private bgTexture = 0; // current camera-feed texture handle (0 = none)
+  // True when bgTexture is a source texture the GPU fills from the <video>;
+  // false when it is re-created from the tracker's RGBA bytes each frame.
+  private bgFromSource = false;
+  private poseFilter: PoseFilter | null = null;
+  // Debounced state handed to onStatus; see STATUS_DEBOUNCE_FRAMES.
+  private reportedState: ViroTrackingState = ViroTrackingState.Unavailable;
+  private degradedFrames = 0;
   private playbackIndex = -1;
   // The camera handed to the renderer, kept so hitTest can unproject through
   // the same frustum the renderer projects with. Null until start().
@@ -600,11 +682,19 @@ export class ViroArSession {
       this.module = module;
       this.engine = new module.SlamEngine();
 
-      const width = this.opts.captureWidth ?? 640;
-      const height = this.opts.captureHeight ?? 480;
+      const feedWidth = this.opts.feedWidth ?? 1280;
+      const feedHeight = this.opts.feedHeight ?? 960;
 
+      // One stream, two consumers. The display used to share the tracker's
+      // 640x480 buffer, so what a viewer saw was set by what the tracker could
+      // afford at 60 Hz. Now the stream is asked for at display size and the
+      // tracker is handed a downscaled copy.
       this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: this.opts.facingMode ?? "environment", width, height },
+        video: {
+          facingMode: this.opts.facingMode ?? "environment",
+          width: feedWidth,
+          height: feedHeight,
+        },
         audio: false,
       });
 
@@ -631,10 +721,17 @@ export class ViroArSession {
 
       const track = this.stream.getVideoTracks()[0];
       const settings = track?.getSettings() ?? {};
-      const capW = settings.width ?? video.videoWidth ?? width;
-      const capH = settings.height ?? video.videoHeight ?? height;
+      const streamW = video.videoWidth || settings.width || feedWidth;
+      const streamH = video.videoHeight || settings.height || feedHeight;
 
-      const intr = this.resolveIntrinsics(capW, capH);
+      // The tracker's frame: the stream's aspect and orientation, no longer
+      // along its long axis than captureWidth/captureHeight allow.
+      const trackLong = Math.max(this.opts.captureWidth ?? 640, this.opts.captureHeight ?? 480);
+      const scale = Math.min(1, trackLong / Math.max(streamW, streamH));
+      const capW = Math.max(1, Math.round(streamW * scale));
+      const capH = Math.max(1, Math.round(streamH * scale));
+
+      const intr = this.resolveIntrinsics(capW, capH, { width: streamW, height: streamH });
       this.engine.configure(
         intr.fx,
         intr.fy,
@@ -671,8 +768,23 @@ export class ViroArSession {
 
       this.opts.sceneApi.initAR();
       // The same intrinsics the tracker is solving with, so the renderer's
-      // frustum is the camera the poses were computed in.
+      // frustum is the camera the poses were computed in. The feed shares the
+      // tracker frame's aspect, so the same frustum lines up with it too.
       this.applyIntrinsics(intr, capW, capH);
+
+      if (this.opts.showCameraBackground !== false) {
+        const tex = this.opts.sceneApi.createSourceTexture(true);
+        if (tex) {
+          this.bgTexture = tex;
+          this.bgFromSource = true;
+          this.opts.sceneApi.arSetCameraBackground(tex);
+        }
+      }
+
+      this.poseFilter =
+        this.opts.poseSmoothing === false ? null : new PoseFilter(this.opts.poseSmoothing ?? {});
+      this.reportedState = ViroTrackingState.Unavailable;
+      this.degradedFrames = 0;
 
       this.startImu();
 
@@ -715,6 +827,8 @@ export class ViroArSession {
       this.opts.sceneApi.destroyTexture(this.bgTexture);
       this.bgTexture = 0;
     }
+    this.bgFromSource = false;
+    this.poseFilter = null;
     if (this.engine) {
       try {
         this.engine.stop();
@@ -770,13 +884,18 @@ export class ViroArSession {
     }
   }
 
-  private resolveIntrinsics(width: number, height: number): SlamIntrinsics {
+  private resolveIntrinsics(
+    width: number,
+    height: number,
+    delivered?: { width: number; height: number },
+  ): SlamIntrinsics {
     const given = this.opts.intrinsics;
     if (given) {
       // Scale a calibration measured at another resolution onto this capture,
       // the same way the playback path does. Without `intrinsicsSize` the
-      // numbers are taken to describe the delivered frame already.
-      const from = this.opts.intrinsicsSize;
+      // numbers are taken to describe the delivered frame — the camera stream,
+      // which the tracker now sees downscaled.
+      const from = this.opts.intrinsicsSize ?? delivered;
       if (!from || from.width <= 0 || from.height <= 0) return given;
       const sx = width / from.width;
       const sy = height / from.height;
@@ -956,10 +1075,10 @@ export class ViroArSession {
     const rgba = ctx.getImageData(0, 0, w, h).data;
 
     // A frame the tracker did not hold has no pose worth drawing against.
-    // Reporting Limited hides the scene and leaves the camera feed alone, which
-    // is what a device does and what an honest preview should show.
+    // Unavailable holds the last tracked pose, which is what the live path does
+    // through a dropout. (Limited would now apply this frame's rotation.)
     const state = frame.tracked === false
-      ? ViroTrackingState.Limited
+      ? ViroTrackingState.Unavailable
       : ViroTrackingState.Normal;
     // The pose describes the sensor-native camera; the background is the
     // rotated frame. Roll the camera to match, or content renders in the right
@@ -1040,31 +1159,74 @@ export class ViroArSession {
 
     const status = engine.getStatus();
     const state = slamStatusToTrackingState(status);
-    this.opts.onStatus?.(state, engine.trackingQuality());
+    const confidence = engine.poseConfidence
+      ? (engine.poseConfidence() as PoseConfidence)
+      : undefined;
+    const reason = engine.trackingReason
+      ? (engine.trackingReason() as TrackingReason)
+      : TrackingReason.None;
+    this.reportStatus(state, engine.trackingQuality(), {
+      confidence: confidence ?? (state === ViroTrackingState.Normal ? PoseConfidence.Full : PoseConfidence.None),
+      reason,
+    });
 
-    // The renderer only draws the scene when tracking is Normal. Without an IMU
-    // (desktop) the tracker never leaves Limited, so `renderWhileLimited` forces Normal
-    // into the renderer (real state still goes to onStatus) — a dev/preview aid.
-    const injectedState =
-      this.opts.renderWhileLimited && state !== ViroTrackingState.Normal
-        ? ViroTrackingState.Normal
-        : state;
+    // Without an IMU (desktop) the tracker never starts, so `renderWhileLimited`
+    // forces Normal into the renderer (real state still goes to onStatus) — a
+    // dev/preview aid.
+    const injectedState = this.opts.renderWhileLimited
+      ? ViroTrackingState.Normal
+      : rendererTrackingState(state, confidence);
 
-    // Convert pose (Z-up/OpenCV) → virocore (Y-up/GL) and inject.
+    // Convert pose (Z-up/OpenCV) → virocore (Y-up/GL), smooth, and inject. A
+    // held frame (Unavailable) is not fed to the filter: virocore ignores its
+    // pose, and the filter should resume from the last one that was drawn.
     const slamQuat: Quat = [engine.poseQx(), engine.poseQy(), engine.poseQz(), engine.poseQw()];
-    const [px, py, pz] = quatRotateVec(FRAME_Q, [engine.posePx(), engine.posePy(), engine.posePz()]);
-    const [qx, qy, qz, qw] = quatMul(quatMul(FRAME_Q, slamQuat), CAM_FLIP);
+    let pos: Vec3 = quatRotateVec(FRAME_Q, [engine.posePx(), engine.posePy(), engine.posePz()]);
+    let rot = quatMul(quatMul(FRAME_Q, slamQuat), CAM_FLIP);
+    if (this.poseFilter && injectedState !== ViroTrackingState.Unavailable) {
+      const smoothed = this.poseFilter.apply(ts, pos, rot);
+      pos = smoothed.position;
+      rot = smoothed.rotation;
+    }
+    const [px, py, pz] = pos;
+    const [qx, qy, qz, qw] = rot;
     this.opts.sceneApi.arSetPose(qx, qy, qz, qw, px, py, pz, injectedState);
-    this.lastCamPos = [px, py, pz];
-    this.lastCamQuat = [qx, qy, qz, qw];
+    // Mirror what the renderer draws, so hitTest unprojects through it.
+    if (injectedState === ViroTrackingState.Normal) this.lastCamPos = [px, py, pz];
+    if (injectedState !== ViroTrackingState.Unavailable) this.lastCamQuat = [qx, qy, qz, qw];
 
     if (this.opts.detectPlanes) {
       this.emitPlanes();
     }
 
     if (this.opts.showCameraBackground !== false) {
-      this.updateCameraBackground(rgba, w, h);
+      if (this.bgFromSource) {
+        this.opts.sceneApi.updateTextureFromSource(this.bgTexture, video);
+      } else {
+        this.updateCameraBackground(rgba, w, h);
+      }
     }
+  }
+
+  /**
+   * Hand onStatus the debounced state: out of Normal only after
+   * STATUS_DEBOUNCE_FRAMES degraded frames in a row, back into it at once.
+   */
+  private reportStatus(
+    state: ViroTrackingState,
+    quality: number,
+    detail: { confidence: PoseConfidence; reason: TrackingReason },
+  ): void {
+    if (state === ViroTrackingState.Normal) {
+      this.degradedFrames = 0;
+      this.reportedState = state;
+    } else if (
+      this.reportedState !== ViroTrackingState.Normal ||
+      ++this.degradedFrames >= STATUS_DEBOUNCE_FRAMES
+    ) {
+      this.reportedState = state;
+    }
+    this.opts.onStatus?.(this.reportedState, quality, detail);
   }
 
   /**
