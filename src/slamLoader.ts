@@ -32,7 +32,17 @@ function resolveSlamBase(baseUrl?: string): string {
   if (typeof explicit === "string" && explicit.length > 0) {
     return explicit.endsWith("/") ? explicit : explicit + "/";
   }
-  return new URL("../slam/", import.meta.url).href;
+  // Vite rewrites this expression at dev time to the directory without its
+  // trailing slash ("/@fs/.../slam"), which asked for ".../slamtinyvio-slam.wasm".
+  const href = new URL("../slam/", import.meta.url).href;
+  return href.endsWith("/") ? href : href + "/";
+}
+
+/** True when the caller said where the engine's files live. */
+function hasSlamBase(baseUrl?: string): boolean {
+  const explicit =
+    baseUrl ?? (globalThis as { VIRO_SLAM_ASSET_BASE?: string }).VIRO_SLAM_ASSET_BASE;
+  return typeof explicit === "string" && explicit.length > 0;
 }
 
 /** Injected scripts, by URL, so a second session does not load the engine twice. */
@@ -117,4 +127,15 @@ export function loadBundledSlam(baseUrl?: string): Promise<SlamWasmFactory> {
 export function slamLocateFile(baseUrl?: string): (path: string) => string {
   const base = resolveSlamBase(baseUrl);
   return (path: string) => (path.endsWith(".wasm") ? base + path : path);
+}
+
+/**
+ * The `locateFile` to start the engine with, or undefined to let it resolve its
+ * `.wasm` next to its own script. A caller-supplied `loadSlam` (a
+ * `slamScriptUrl` in the Viro bridge) loaded the engine from somewhere else;
+ * pointing it at this package's copy then fetched a file that is not there.
+ */
+export function slamLocateFileFor(customLoader: boolean, baseUrl?: string): ((path: string) => string) | undefined {
+  if (customLoader && !hasSlamBase(baseUrl)) return undefined;
+  return slamLocateFile(baseUrl);
 }
