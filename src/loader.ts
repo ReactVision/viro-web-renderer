@@ -16,7 +16,10 @@ function resolveAssetBase(baseUrl?: string): string {
   if (typeof explicit === "string" && explicit.length > 0) {
     return explicit.endsWith("/") ? explicit : explicit + "/";
   }
-  return new URL("../wasm/", import.meta.url).href;
+  // Vite rewrites this expression at dev time to the directory without its
+  // trailing slash ("/@fs/.../wasm"), so the file names would be glued onto it.
+  const href = new URL("../wasm/", import.meta.url).href;
+  return href.endsWith("/") ? href : href + "/";
 }
 
 /**

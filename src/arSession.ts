@@ -17,7 +17,7 @@
  * into React and handles the permission UX.
  */
 
-import { loadBundledSlam, slamLocateFile } from "./slamLoader.js";
+import { loadBundledSlam, slamLocateFileFor } from "./slamLoader.js";
 import type { ViroSceneApi } from "./sceneApi.js";
 import { ViroTrackingState } from "./sceneApi.js";
 import { PoseFilter, type PoseFilterOptions } from "./poseFilter.js";
@@ -675,10 +675,12 @@ export class ViroArSession {
     }
     try {
       const factory = await this.resolveSlamFactory();
-      // Pin the .wasm to the same directory as the glue. Emscripten otherwise
-      // resolves it against the host page, which 404s the moment the engine is
-      // served from anywhere but the site root.
-      const module = await factory({ locateFile: slamLocateFile(this.opts.slamBaseUrl) });
+      // Pin the .wasm to the same directory as the bundled glue. Emscripten
+      // otherwise resolves it against the host page, which 404s the moment the
+      // engine is served from anywhere but the site root. An engine the caller
+      // loaded itself finds its .wasm next to its own script.
+      const locateFile = slamLocateFileFor(Boolean(this.opts.loadSlam), this.opts.slamBaseUrl);
+      const module = await factory(locateFile ? { locateFile } : {});
       this.module = module;
       this.engine = new module.SlamEngine();
 
