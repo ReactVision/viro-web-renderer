@@ -13,6 +13,7 @@ Fixes found running the web player against real scenes. The compiled renderer in
 - **Web AR holds its pose through a dropout** instead of snapping to a default orientation. tinyvio's `poseConfidence` decides the state: RotationOnly applies rotation and holds position, None holds the last pose.
 - **The pose is smoothed** with a One Euro filter (`poseSmoothing`, or `false` for the raw solve), and `onStatus` is debounced out of Normal and carries `confidence` and `reason`.
 - **The camera feed draws from the stream** at `feedWidth`/`feedHeight` (default 1280x960) through a source texture, with no per-frame readback; the tracker gets a downscaled copy.
+- **Web AR starts under Vite.** The tracker's wasm path lost its trailing slash in dev, and an engine loaded through `loadSlam` was pointed at the package's copy instead of its own.
 
 ### Added
 

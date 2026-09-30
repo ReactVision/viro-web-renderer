@@ -13,6 +13,8 @@ absent from 1.0.0's binary, and each falls back to the old path when missing.
 - **Relocalising frames keep their rotation.** tinyvio's `poseConfidence` now decides the renderer's state: Full or PositionNoScale is Normal, RotationOnly is Limited (rotation applied, position held), None holds the last pose. An engine without it is drawn only while Running.
 - **The pose is smoothed** with a One Euro filter before `arSetPose` (`poseSmoothing`, or `false` for the raw solve). tinyvio does not filter, and the raw pose shook content visibly while tracking was healthy.
 - **`onStatus` is debounced** out of Normal (15 frames) and back at once, and carries the frame's `confidence` and `reason`. `reason === NoGravity` that persists means no motion events are arriving.
+- **The default asset paths keep their trailing slash under Vite.** Vite rewrites `new URL("../slam/", import.meta.url)` at dev time to the directory without its `/`, so the tracker asked for `.../slamtinyvio-slam.wasm` and AR aborted ("both async and sync fetching of the wasm failed"). The renderer's `../wasm/` base had the same pattern. Both bases now end in `/`.
+- **An engine loaded through `loadSlam` finds its own `.wasm`.** The session pointed every engine at this package's `slam/` copy, including one a host loaded from its own script, which then fetched a file that was not there. With a custom `loadSlam` and no `slamBaseUrl`, the engine resolves the `.wasm` next to its script.
 - Playback reports untracked frames as Unavailable, so they hold the last tracked pose as the live path does.
 
 ### Added
