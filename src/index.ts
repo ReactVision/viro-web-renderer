@@ -47,7 +47,11 @@ export {
   requestDeviceMotionPermission,
   SlamStatus,
   SlamPlaneType,
+  PoseConfidence,
+  TrackingReason,
 } from "./arSession.js";
+export { PoseFilter } from "./poseFilter.js";
+export type { PoseFilterOptions } from "./poseFilter.js";
 export type {
   ViroArSessionOptions,
   SlamEngine,
@@ -61,6 +65,7 @@ export type {
   ArPlaneAlignment,
   ArHitResult,
 } from "./arSession.js";
+export { ViroRendererAbortError } from "./types.js";
 export type {
   ViroWebModule,
   ViroWebModuleFactory,
