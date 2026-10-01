@@ -14,6 +14,7 @@ Fixes found running the web player against real scenes. The compiled renderer in
 - **The pose is smoothed** with a One Euro filter (`poseSmoothing`, or `false` for the raw solve), and `onStatus` is debounced out of Normal and carries `confidence` and `reason`.
 - **The camera feed draws from the stream** at `feedWidth`/`feedHeight` (default 1280x960) through a source texture, with no per-frame readback; the tracker gets a downscaled copy.
 - **Web AR starts under Vite.** The tracker's wasm path lost its trailing slash in dev, and an engine loaded through `loadSlam` was pointed at the package's copy instead of its own.
+- **Playback reports untracked frames as Unavailable,** so they hold the last tracked pose as the live path does.
 
 ### Added
 
@@ -27,7 +28,7 @@ This package ships the compiled module, its Emscripten glue, and a typed loader,
 
 ### Web AR is included
 
-Pose tracking and plane detection come from [tinyvio](https://github.com/ReactVision/tinyvio), ReactVision's own visual-inertial tracker, and it ships **inside this package** — 260 KB of WASM under `slam/`, loaded by `ViroArSession.start()` with no configuration. There is no second module to obtain or host.
+Pose tracking and plane detection come from tinyvio, ReactVision's own visual-inertial tracker, and it ships **inside this package** — 260 KB of WASM under `slam/`, loaded by `ViroArSession.start()` with no configuration. There is no second module to obtain or host.
 
 `ViroArSession` captures the camera and IMU, feeds the tracker, converts the pose from the tracker's Z-up/OpenCV frame into the renderer's Y-up/GL frame, and injects it. A playback mode replays a recorded session instead of tracking a live one.
 
