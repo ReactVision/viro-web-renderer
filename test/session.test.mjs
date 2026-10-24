@@ -9,7 +9,7 @@
  * not flash through a short dropout.
  */
 import assert from "node:assert/strict";
-import { ViroArSession, PoseConfidence, SlamStatus } from "../dist/arSession.js";
+import { ViroArSession, PoseConfidence, SlamStatus, cameraFromDeviceQuat } from "../dist/arSession.js";
 import { PoseFilter } from "../dist/poseFilter.js";
 import { ViroTrackingState } from "../dist/sceneApi.js";
 
@@ -21,10 +21,12 @@ function ok(name, fn) {
 }
 
 function fakeSession(opts = {}) {
-  const calls = { poses: [], statuses: [], sourceUploads: 0, rgbaUploads: 0 };
+  const calls = { poses: [], statuses: [], visibility: [], sourceUploads: 0, rgbaUploads: 0 };
   const sceneApi = new Proxy(
     {
       arSetPose: (...a) => calls.poses.push({ q: a.slice(0, 4), p: a.slice(4, 7), state: a[7] }),
+      getRootNode: () => 1,
+      setNodeVisible: (node, visible) => calls.visibility.push(visible),
       updateTextureFromSource: () => { calls.sourceUploads++; return true; },
       createTextureRGBA: () => { calls.rgbaUploads++; return 7; },
     },
@@ -159,6 +161,63 @@ ok("PoseFilter starts over after a gap and rotates the short way", () => {
   // -q is the same rotation as q: the output must stay near identity.
   const r = g.apply(1 / 60, [0, 0, 0], [0, 0, 0, -1]).rotation;
   assert.ok(Math.abs(Math.abs(r[3]) - 1) < 1e-9, `w ${r[3]}`);
+});
+
+ok("content hides after a held stretch and comes back with the pose", () => {
+  const { calls, step } = fakeSession({ poseSmoothing: false });
+  step(SlamStatus.Running, PoseConfidence.Full);
+  for (let i = 0; i < 14; i++) step(SlamStatus.Lost, PoseConfidence.None);
+  assert.deepEqual(calls.visibility, [], "a short dropout keeps the content");
+  step(SlamStatus.Lost, PoseConfidence.None);
+  step(SlamStatus.Lost, PoseConfidence.None);
+  assert.deepEqual(calls.visibility, [false], "hidden once, not every frame");
+  step(SlamStatus.Lost, PoseConfidence.RotationOnly);
+  assert.deepEqual(calls.visibility, [false, true], "a drawn pose shows it again");
+});
+
+ok("hideContentWhenLost: false leaves visibility alone", () => {
+  const { calls, step } = fakeSession({ poseSmoothing: false, hideContentWhenLost: false });
+  for (let i = 0; i < 40; i++) step(SlamStatus.Lost, PoseConfidence.None);
+  assert.deepEqual(calls.visibility, []);
+});
+
+ok("stop() shows content it hid", () => {
+  const { s, calls, step } = fakeSession({ poseSmoothing: false });
+  for (let i = 0; i < 20; i++) step(SlamStatus.Lost, PoseConfidence.None);
+  // The fake has no camera or textures to release.
+  s.video = null;
+  s.engine = null;
+  s.stop();
+  assert.deepEqual(calls.visibility, [false, true]);
+});
+
+// tinyvio's cameraFromDeviceForOrientation(angle + 180), written out as matrices.
+function quatToM3([x, y, z, w]) {
+  return [
+    [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+    [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+    [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+  ];
+}
+function tinyvioCameraFromDevice(deg) {
+  const a = (-deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  // rot * diag(1, -1, -1)
+  return [[c, s, 0], [s, -c, 0], [0, 0, -1]];
+}
+
+ok("camera-from-device matches tinyvio for every screen angle", () => {
+  for (const angle of [0, 90, 180, 270, -90]) {
+    const got = quatToM3(cameraFromDeviceQuat(angle));
+    const want = tinyvioCameraFromDevice(angle + 180);
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        assert.ok(Math.abs(got[r][c] - want[r][c]) < 1e-9, `angle ${angle} [${r}][${c}] ${got[r][c]} vs ${want[r][c]}`);
+      }
+    }
+  }
+  // Portrait: camera X = device -X, camera Y = device Y, camera Z = device -Z.
+  const portrait = quatToM3(cameraFromDeviceQuat(0)).map((row) => row.map((v) => Math.round(v) + 0));
+  assert.deepEqual(portrait, [[-1, 0, 0], [0, 1, 0], [0, 0, -1]]);
 });
 
 console.log(`session: all ${passed} checks passed`);
