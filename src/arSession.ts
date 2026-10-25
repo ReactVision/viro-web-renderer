@@ -27,7 +27,8 @@ import { PoseFilter, type PoseFilterOptions } from "./poseFilter.js";
  * platforms/slam/slam_web_bindings.cpp). Only the members we drive are typed.
  *
  * poseConfidence and trackingReason are optional because only tinyvio binds
- * them; an engine without them is driven from getStatus alone.
+ * them; an engine without them is driven from getStatus alone. setFusedUp is
+ * optional for the same reason, and newer than both.
  */
 export interface SlamEngine {
   configure(
@@ -72,6 +73,8 @@ export interface SlamEngine {
   poseConfidence?(): number;
   /** Why tracking is degraded; see TrackingReason. 0 when all is well. */
   trackingReason?(): number;
+  /** Up in device axes, from the platform's fused attitude (deviceorientation). */
+  setFusedUp?(x: number, y: number, z: number): void;
   // Planes (fetch then read by index; all in the tracker's Z-up world space).
   fetchPlanes(maxPlanes: number): number;
   planeId(i: number): number;
@@ -553,14 +556,6 @@ const STATUS_DEBOUNCE_FRAMES = 15;
  */
 const LOST_HIDE_FRAMES = 15;
 
-/**
- * Degrees added to the screen angle before building the camera-from-device
- * rotation. The browser's portrait stream is rotated half a turn from what
- * tinyvio's cameraFromDeviceForOrientation() assumes for the reported angle;
- * measured in tinyvio's web/host.js (CAMERA_ROTATION_OFFSET_DEG), not derived.
- */
-const CAMERA_ROTATION_OFFSET_DEG = 180;
-
 /** The screen angle the browser reports (0, 90, 180, -90/270). */
 function screenAngleDeg(): number {
   if (typeof window === "undefined") return 0;
@@ -580,11 +575,41 @@ function screenAngleDeg(): number {
  * screen with its Y up: the gyro prediction then pushes features the wrong way
  * and gravity lands on the wrong axis, which on a phone shows up as tracking
  * that never holds and a world tilted under the content.
+ *
+ * No half-turn offset. tinyvio's web/host.js adds 180 degrees to the angle, but
+ * that host also feeds the tracker an attitude from deviceorientation, which
+ * this engine does not take. Here the offset maps the gyro's X and Y onto the
+ * camera's -X and -Y, so pitch and yaw come out inverted (seen on an iPhone in
+ * portrait); without it all three axes land where the physics puts them.
  */
 export function cameraFromDeviceQuat(screenAngle: number): [number, number, number, number] {
-  const a = (-(screenAngle + CAMERA_ROTATION_OFFSET_DEG) * Math.PI) / 180;
+  const a = (-screenAngle * Math.PI) / 180;
   // (cos(a/2) + sin(a/2) k) * i = cos(a/2) i + sin(a/2) j
   return [Math.cos(a / 2), Math.sin(a / 2), 0, 0];
+}
+
+/**
+ * DeviceMotion's rotationRate as angular velocity about the device's X, Y and Z
+ * axes, in the event's own units (degrees per second).
+ *
+ * The spec names the components after the Euler angles -- beta about X, gamma
+ * about Y, alpha about Z -- and Chrome on Android follows it. WebKit, and so
+ * every browser on iOS, fills alpha, beta and gamma with the sensor's X, Y and
+ * Z rates in that order. Measured on an iPhone (iOS 18.7, Safari 27) by fitting
+ * rotationRate against the body rate derived from deviceorientation over every
+ * signed permutation: WebKit's order left 0.16 relative error, the spec's 1.40.
+ * Read the spec's way on iOS, pitch and yaw arrive on each other's axes, which
+ * only shows when the phone turns in place: with parallax the image outvotes
+ * the gyro, without it the content swings in directions no rotation explains.
+ */
+export function deviceGyro(
+  r: { alpha: number | null; beta: number | null; gamma: number | null },
+  webkit: boolean,
+): [number, number, number] {
+  const alpha = r.alpha ?? 0;
+  const beta = r.beta ?? 0;
+  const gamma = r.gamma ?? 0;
+  return webkit ? [alpha, beta, gamma] : [beta, gamma, alpha];
 }
 
 /**
@@ -695,6 +720,7 @@ export class ViroArSession {
   private rafId = 0;
   private running = false;
   private imuHandler: ((e: DeviceMotionEvent) => void) | null = null;
+  private orientationHandler: ((e: DeviceOrientationEvent) => void) | null = null;
 
   private bgTexture = 0; // current camera-feed texture handle (0 = none)
   // True when bgTexture is a source texture the GPU fills from the <video>;
@@ -882,6 +908,10 @@ export class ViroArSession {
       window.removeEventListener("devicemotion", this.imuHandler);
       this.imuHandler = null;
     }
+    if (this.orientationHandler) {
+      window.removeEventListener("deviceorientation", this.orientationHandler);
+      this.orientationHandler = null;
+    }
     if (this.stream) {
       for (const track of this.stream.getTracks()) track.stop();
       this.stream = null;
@@ -1011,6 +1041,7 @@ export class ViroArSession {
   private startImu(): void {
     if (typeof window === "undefined" || !("DeviceMotionEvent" in window)) return;
     const accelSign = isApplePlatform() ? -1 : 1;
+    const gyroWebKit = isApplePlatform();
     const handler = (e: DeviceMotionEvent) => {
       if (!this.engine) return;
       const a = e.accelerationIncludingGravity;
@@ -1018,15 +1049,10 @@ export class ViroArSession {
       if (!a || !r) return;
       const ts = performance.now() / 1000;
       const deg = Math.PI / 180;
-      // Device frame, as tinyvio wants it: rotationRate is degrees per second
-      // named after its axes (beta about X, gamma about Y, alpha about Z). The
-      // camera's axes are applied by the engine through cameraFromDevice, not
-      // here. This used to negate gx alone, which compensated in part for that
-      // rotation being passed as identity; a single-axis flip is a reflection,
-      // not a rotation, so it cannot be right once the rotation is.
-      const gx = (r.beta ?? 0) * deg;
-      const gy = (r.gamma ?? 0) * deg;
-      const gz = (r.alpha ?? 0) * deg;
+      // Device frame, as tinyvio wants it; the camera's axes are applied by the
+      // engine through cameraFromDevice, not here. See deviceGyro for why the
+      // components are read differently on Apple.
+      const [gx, gy, gz] = deviceGyro(r, gyroWebKit).map((v) => v * deg);
       this.engine.feedImu(
         ts,
         accelSign * (a.x ?? 0),
@@ -1039,6 +1065,23 @@ export class ViroArSession {
     };
     window.addEventListener("devicemotion", handler);
     this.imuHandler = handler;
+
+    // The platform's fused "up", which the engine prefers over its own
+    // low-passed accelerometer when it has one: the accelerometer cannot tell
+    // gravity from the hand carrying the phone, so its up wanders exactly when
+    // tracking is lost and the rotation is all there is. Third row of the W3C
+    // Rz(alpha) Rx(beta) Ry(gamma), i.e. world "away from the earth" in device
+    // axes; the same expression as tinyvio's web/host.js.
+    if (typeof this.engine?.setFusedUp !== "function" || !("DeviceOrientationEvent" in window)) return;
+    const onOrientation = (e: DeviceOrientationEvent) => {
+      if (!this.engine?.setFusedUp || e.beta === null || e.gamma === null) return;
+      const b = (e.beta * Math.PI) / 180;
+      const g = (e.gamma * Math.PI) / 180;
+      const cb = Math.cos(b);
+      this.engine.setFusedUp(-cb * Math.sin(g), Math.sin(b), cb * Math.cos(g));
+    };
+    window.addEventListener("deviceorientation", onOrientation);
+    this.orientationHandler = onOrientation;
   }
 
   /**
@@ -1508,6 +1551,15 @@ export async function requestDeviceMotionPermission(): Promise<boolean> {
     | { requestPermission?: () => Promise<"granted" | "denied"> }
     | undefined;
   if (!anyMotion) return false;
+  // Orientation is asked for alongside, inside the same gesture: a second
+  // request after an await has lost it and is refused. Not fatal either way --
+  // without it the engine falls back to the accelerometer's up.
+  const anyOrientation = (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent as
+    | { requestPermission?: () => Promise<"granted" | "denied"> }
+    | undefined;
+  if (typeof anyOrientation?.requestPermission === "function") {
+    anyOrientation.requestPermission().catch(() => undefined);
+  }
   if (typeof anyMotion.requestPermission === "function") {
     try {
       const result = await anyMotion.requestPermission();

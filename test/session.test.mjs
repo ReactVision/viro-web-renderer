@@ -9,7 +9,7 @@
  * not flash through a short dropout.
  */
 import assert from "node:assert/strict";
-import { ViroArSession, PoseConfidence, SlamStatus, cameraFromDeviceQuat } from "../dist/arSession.js";
+import { ViroArSession, PoseConfidence, SlamStatus, cameraFromDeviceQuat, deviceGyro } from "../dist/arSession.js";
 import { PoseFilter } from "../dist/poseFilter.js";
 import { ViroTrackingState } from "../dist/sceneApi.js";
 
@@ -191,7 +191,7 @@ ok("stop() shows content it hid", () => {
   assert.deepEqual(calls.visibility, [false, true]);
 });
 
-// tinyvio's cameraFromDeviceForOrientation(angle + 180), written out as matrices.
+// tinyvio's cameraFromDeviceForOrientation(angle), written out as matrices.
 function quatToM3([x, y, z, w]) {
   return [
     [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
@@ -208,16 +208,26 @@ function tinyvioCameraFromDevice(deg) {
 ok("camera-from-device matches tinyvio for every screen angle", () => {
   for (const angle of [0, 90, 180, 270, -90]) {
     const got = quatToM3(cameraFromDeviceQuat(angle));
-    const want = tinyvioCameraFromDevice(angle + 180);
+    const want = tinyvioCameraFromDevice(angle);
     for (let r = 0; r < 3; r++) {
       for (let c = 0; c < 3; c++) {
         assert.ok(Math.abs(got[r][c] - want[r][c]) < 1e-9, `angle ${angle} [${r}][${c}] ${got[r][c]} vs ${want[r][c]}`);
       }
     }
   }
-  // Portrait: camera X = device -X, camera Y = device Y, camera Z = device -Z.
+  // Portrait, rear camera: camera X = device X, camera Y = device -Y (image
+  // rows grow down the screen), camera Z = device -Z (looking out the back).
   const portrait = quatToM3(cameraFromDeviceQuat(0)).map((row) => row.map((v) => Math.round(v) + 0));
-  assert.deepEqual(portrait, [[-1, 0, 0], [0, 1, 0], [0, 0, -1]]);
+  assert.deepEqual(portrait, [[1, 0, 0], [0, -1, 0], [0, 0, -1]]);
+});
+
+ok("rotationRate is read per engine: WebKit in sensor order, others per spec", () => {
+  const r = { alpha: 1, beta: 2, gamma: 3 };
+  // WebKit fills alpha/beta/gamma with the X/Y/Z rates.
+  assert.deepEqual(deviceGyro(r, true), [1, 2, 3]);
+  // The spec: beta about X, gamma about Y, alpha about Z.
+  assert.deepEqual(deviceGyro(r, false), [2, 3, 1]);
+  assert.deepEqual(deviceGyro({ alpha: null, beta: null, gamma: null }, true), [0, 0, 0]);
 });
 
 console.log(`session: all ${passed} checks passed`);
