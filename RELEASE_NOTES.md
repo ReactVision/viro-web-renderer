@@ -1,5 +1,23 @@
 # Release Notes
 
+## 1.1.0
+
+Web AR on iPhone: content stays where it was placed when you turn the phone, and hides instead of riding along on the screen while tracking is lost. The compiled renderer is virocore 3.1.0, and the tracker is tinyvio with `setFusedUp`.
+
+### Fixed
+
+- **Web AR content stays in the room on iPhone.** The gyro is read in WebKit's axis order, the camera-from-device rotation given to tinyvio is the physical one for a rear camera, and the accelerometer sign follows iOS. Before, content swung around when the phone turned in place.
+
+### Added
+
+- **`hideContentWhenLost`** (default true): the scene's content hides after a quarter second without a pose and returns with the next one; the camera feed keeps drawing.
+- **The fused up vector** from `deviceorientation` reaches tinyvio, which keeps the floor level while tracking is limited to rotation.
+
+### Known limits
+
+- The camera-from-device rotation is fixed when the session starts; rotating to landscape mid-session is not handled.
+- Android Chrome reads the gyro per spec, and has not been measured the way iOS was.
+
 ## 1.0.1
 
 Fixes found running the web player against real scenes. The compiled renderer in this release is virocore 3.0.2; the new calls fall back to the old path on an older binary, but the heap, tap and dropout fixes live in the binary and need this one.

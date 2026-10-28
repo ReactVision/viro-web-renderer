@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0
+
+Needs the virocore web build of 3.1.0 and tinyvio's `setFusedUp`; both ship in this package.
+
+### Fixed
+
+- **Web AR content stays in the room on iPhone (`arSession.ts`).** It swung around when the phone turned and stuck to the screen when tracking dropped. Four causes, each measured on device:
+  - WebKit fills `rotationRate`'s alpha, beta and gamma with the sensor's X, Y and Z rates, not in the spec's order; read the spec's way, pitch and yaw landed on each other's axes.
+  - tinyvio was told the camera and the IMU share axes. For a rear camera in portrait they differ on two, and the gyro prediction pushed features the wrong way.
+  - iOS reports `accelerationIncludingGravity` with the opposite sign to the spec. The old single-axis flip was a reflection, not a rotation.
+  - With tracking lost the renderer held the last pose, so the content rode along with the screen.
+
+### Added
+
+- **`hideContentWhenLost`** (default true). After a quarter second without a pose the scene's content is hidden, and it comes back with the first fresh pose; the camera feed keeps drawing. `false` keeps the old behaviour.
+- **The fused up vector from `deviceorientation`** goes to tinyvio through `setFusedUp` when the engine has it, which keeps the floor level while tracking is down to rotation only.
+- `requestDeviceMotionPermission` also asks for orientation permission, in the same tap.
+
 ## 1.0.1
 
 Needs the virocore web build from the same change: the new renderer calls are
