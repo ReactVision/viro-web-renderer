@@ -16,7 +16,7 @@ Web AR on iPhone: content stays where it was placed when you turn the phone, and
 ### Known limits
 
 - The camera-from-device rotation is fixed when the session starts; rotating to landscape mid-session is not handled.
-- Android Chrome reads the gyro per spec, and has not been measured the way iOS was.
+- Android Chrome reads the gyro in the spec's order, which is what Chrome implements.
 
 ## 1.0.1
 
