@@ -27,7 +27,8 @@ import { PoseFilter, type PoseFilterOptions } from "./poseFilter.js";
  * platforms/slam/slam_web_bindings.cpp). Only the members we drive are typed.
  *
  * poseConfidence and trackingReason are optional because only tinyvio binds
- * them; an engine without them is driven from getStatus alone.
+ * them; an engine without them is driven from getStatus alone. setFusedUp is
+ * optional for the same reason, and newer than both.
  */
 export interface SlamEngine {
   configure(
@@ -72,6 +73,8 @@ export interface SlamEngine {
   poseConfidence?(): number;
   /** Why tracking is degraded; see TrackingReason. 0 when all is well. */
   trackingReason?(): number;
+  /** Up in device axes, from the platform's fused attitude (deviceorientation). */
+  setFusedUp?(x: number, y: number, z: number): void;
   // Planes (fetch then read by index; all in the tracker's Z-up world space).
   fetchPlanes(maxPlanes: number): number;
   planeId(i: number): number;
@@ -321,6 +324,14 @@ export interface ViroArSessionOptions {
    * tracker never converges. Real tracking state is still reported via onStatus.
    */
   renderWhileLimited?: boolean;
+  /**
+   * Hide the scene's content while tracking is lost, instead of drawing it
+   * from the last pose. Default true. A held pose freezes the camera, so the
+   * content stays put on screen while the feed moves behind it; hiding it
+   * after a short grace reads as "lost" rather than as content stuck to the
+   * display. The camera feed keeps drawing either way.
+   */
+  hideContentWhenLost?: boolean;
   /** Max planes to fetch per update when detectPlanes is on. Default 10. */
   maxPlanes?: number;
   /**
@@ -534,6 +545,84 @@ function rendererTrackingState(
 /** Consecutive degraded frames before the reported state leaves Normal. */
 const STATUS_DEBOUNCE_FRAMES = 15;
 
+/**
+ * Consecutive held (Unavailable) frames before anchored content is hidden.
+ *
+ * A held frame freezes the camera, so everything in the scene stays where it
+ * was on screen while the feed behind it moves: content reads as glued to the
+ * display. tinyvio's reference host hides after the same quarter of a second,
+ * measured: a three-frame dropout already moves an anchor 40 px on a 480-wide
+ * image, so there is no length at which a frozen pose stays believable.
+ */
+const LOST_HIDE_FRAMES = 15;
+
+/** The screen angle the browser reports (0, 90, 180, -90/270). */
+function screenAngleDeg(): number {
+  if (typeof window === "undefined") return 0;
+  const angle = window.screen?.orientation?.angle;
+  if (typeof angle === "number") return angle;
+  const legacy = (window as { orientation?: unknown }).orientation;
+  return typeof legacy === "number" ? legacy : 0;
+}
+
+/**
+ * tinyvio's cameraFromDeviceForOrientation() as a quaternion [x,y,z,w], the
+ * form `configure` takes it in: Rz(-angle) * Rx(180deg), where Rx(180deg) is
+ * the portrait baseline for a rear camera (camera Y down = device -Y, camera Z
+ * forward = device -Z) and Rz spins the image axes within the screen plane.
+ *
+ * Passing identity here instead tells the tracker the camera looks out of the
+ * screen with its Y up: the gyro prediction then pushes features the wrong way
+ * and gravity lands on the wrong axis, which on a phone shows up as tracking
+ * that never holds and a world tilted under the content.
+ *
+ * No half-turn offset. tinyvio's web/host.js adds 180 degrees to the angle, but
+ * that host also feeds the tracker an attitude from deviceorientation, which
+ * this engine does not take. Here the offset maps the gyro's X and Y onto the
+ * camera's -X and -Y, so pitch and yaw come out inverted (seen on an iPhone in
+ * portrait); without it all three axes land where the physics puts them.
+ */
+export function cameraFromDeviceQuat(screenAngle: number): [number, number, number, number] {
+  const a = (-screenAngle * Math.PI) / 180;
+  // (cos(a/2) + sin(a/2) k) * i = cos(a/2) i + sin(a/2) j
+  return [Math.cos(a / 2), Math.sin(a / 2), 0, 0];
+}
+
+/**
+ * DeviceMotion's rotationRate as angular velocity about the device's X, Y and Z
+ * axes, in the event's own units (degrees per second).
+ *
+ * The spec names the components after the Euler angles -- beta about X, gamma
+ * about Y, alpha about Z -- and Chrome on Android follows it. WebKit, and so
+ * every browser on iOS, fills alpha, beta and gamma with the sensor's X, Y and
+ * Z rates in that order. Measured on an iPhone (iOS 18.7, Safari 27) by fitting
+ * rotationRate against the body rate derived from deviceorientation over every
+ * signed permutation: WebKit's order left 0.16 relative error, the spec's 1.40.
+ * Read the spec's way on iOS, pitch and yaw arrive on each other's axes, which
+ * only shows when the phone turns in place: with parallax the image outvotes
+ * the gyro, without it the content swings in directions no rotation explains.
+ */
+export function deviceGyro(
+  r: { alpha: number | null; beta: number | null; gamma: number | null },
+  webkit: boolean,
+): [number, number, number] {
+  const alpha = r.alpha ?? 0;
+  const beta = r.beta ?? 0;
+  const gamma = r.gamma ?? 0;
+  return webkit ? [alpha, beta, gamma] : [beta, gamma, alpha];
+}
+
+/**
+ * iOS reports accelerationIncludingGravity with the opposite sign to the spec
+ * that Chrome on Android follows; fed as-is, "up" comes out as down. Same
+ * platform test as tinyvio's web/host.js, iPadOS-as-Mac included.
+ */
+function isApplePlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 function slamStatusToTrackingState(status: number): ViroTrackingState {
   switch (status) {
     case SlamStatus.Running:
@@ -631,6 +720,7 @@ export class ViroArSession {
   private rafId = 0;
   private running = false;
   private imuHandler: ((e: DeviceMotionEvent) => void) | null = null;
+  private orientationHandler: ((e: DeviceOrientationEvent) => void) | null = null;
 
   private bgTexture = 0; // current camera-feed texture handle (0 = none)
   // True when bgTexture is a source texture the GPU fills from the <video>;
@@ -640,6 +730,9 @@ export class ViroArSession {
   // Debounced state handed to onStatus; see STATUS_DEBOUNCE_FRAMES.
   private reportedState: ViroTrackingState = ViroTrackingState.Unavailable;
   private degradedFrames = 0;
+  // Consecutive held frames, and whether that hid the content; see LOST_HIDE_FRAMES.
+  private lostFrames = 0;
+  private contentHidden = false;
   private playbackIndex = -1;
   // The camera handed to the renderer, kept so hitTest can unproject through
   // the same frustum the renderer projects with. Null until start().
@@ -734,6 +827,9 @@ export class ViroArSession {
       const capH = Math.max(1, Math.round(streamH * scale));
 
       const intr = this.resolveIntrinsics(capW, capH, { width: streamW, height: streamH });
+      // Fixed at start: rotating the device mid-session also swaps the stream's
+      // dimensions, which the capture canvas does not follow either.
+      const [cdx, cdy, cdz, cdw] = cameraFromDeviceQuat(screenAngleDeg());
       this.engine.configure(
         intr.fx,
         intr.fy,
@@ -753,13 +849,11 @@ export class ViroArSession {
         this.tuning.lostThreshold,
         this.tuning.lostRecovery,
         this.tuning.lostGrace,
-        // camera-to-IMU-frame rotation (x,y,z,w) -- identity for now. TODO:
-        // derive from screen.orientation/device orientation once that's wired
-        // up; identity only matches raw sensor readings on one orientation.
-        0,
-        0,
-        0,
-        1,
+        // Camera-from-device rotation (x,y,z,w); see cameraFromDeviceQuat.
+        cdx,
+        cdy,
+        cdz,
+        cdw,
       );
       this.engine.start();
 
@@ -787,6 +881,7 @@ export class ViroArSession {
         this.opts.poseSmoothing === false ? null : new PoseFilter(this.opts.poseSmoothing ?? {});
       this.reportedState = ViroTrackingState.Unavailable;
       this.degradedFrames = 0;
+      this.lostFrames = 0;
 
       this.startImu();
 
@@ -803,6 +898,8 @@ export class ViroArSession {
   /** Stops capture, releases the camera, and tears down the tracker. */
   stop(): void {
     this.running = false;
+    this.setContentHidden(false);
+    this.lostFrames = 0;
     if (this.rafId) {
       cancelAnimationFrame(this.rafId);
       this.rafId = 0;
@@ -810,6 +907,10 @@ export class ViroArSession {
     if (this.imuHandler) {
       window.removeEventListener("devicemotion", this.imuHandler);
       this.imuHandler = null;
+    }
+    if (this.orientationHandler) {
+      window.removeEventListener("deviceorientation", this.orientationHandler);
+      this.orientationHandler = null;
     }
     if (this.stream) {
       for (const track of this.stream.getTracks()) track.stop();
@@ -939,6 +1040,8 @@ export class ViroArSession {
 
   private startImu(): void {
     if (typeof window === "undefined" || !("DeviceMotionEvent" in window)) return;
+    const accelSign = isApplePlatform() ? -1 : 1;
+    const gyroWebKit = isApplePlatform();
     const handler = (e: DeviceMotionEvent) => {
       if (!this.engine) return;
       const a = e.accelerationIncludingGravity;
@@ -946,22 +1049,39 @@ export class ViroArSession {
       if (!a || !r) return;
       const ts = performance.now() / 1000;
       const deg = Math.PI / 180;
-      // DeviceMotion's raw rotationRate (alpha=Z, beta=X, gamma=Y) needs a
-      // parity flip on gx (not just the direct relabel below) to match the
-      // engine's expected handedness -- confirmed against two real captures
-      // with independent ground truth (CoreMotion): portrait improved
-      // 12.27deg->10.30deg (real: 10.74deg) and landscape 20.88deg->11.76deg
-      // (real: 11.80deg) with the SAME unconditional flip. This is NOT an
-      // orientation-dependent correction (tried gating it on landscape via
-      // both screen.orientation.angle and viewport dimensions; the underlying
-      // bug turned out to reproduce in portrait too) -- always apply it.
-      const gx = -(r.beta ?? 0) * deg;
-      const gy = (r.gamma ?? 0) * deg;
-      const gz = (r.alpha ?? 0) * deg;
-      this.engine.feedImu(ts, a.x ?? 0, a.y ?? 0, a.z ?? 0, gx, gy, gz);
+      // Device frame, as tinyvio wants it; the camera's axes are applied by the
+      // engine through cameraFromDevice, not here. See deviceGyro for why the
+      // components are read differently on Apple.
+      const [gx, gy, gz] = deviceGyro(r, gyroWebKit).map((v) => v * deg);
+      this.engine.feedImu(
+        ts,
+        accelSign * (a.x ?? 0),
+        accelSign * (a.y ?? 0),
+        accelSign * (a.z ?? 0),
+        gx,
+        gy,
+        gz,
+      );
     };
     window.addEventListener("devicemotion", handler);
     this.imuHandler = handler;
+
+    // The platform's fused "up", which the engine prefers over its own
+    // low-passed accelerometer when it has one: the accelerometer cannot tell
+    // gravity from the hand carrying the phone, so its up wanders exactly when
+    // tracking is lost and the rotation is all there is. Third row of the W3C
+    // Rz(alpha) Rx(beta) Ry(gamma), i.e. world "away from the earth" in device
+    // axes; the same expression as tinyvio's web/host.js.
+    if (typeof this.engine?.setFusedUp !== "function" || !("DeviceOrientationEvent" in window)) return;
+    const onOrientation = (e: DeviceOrientationEvent) => {
+      if (!this.engine?.setFusedUp || e.beta === null || e.gamma === null) return;
+      const b = (e.beta * Math.PI) / 180;
+      const g = (e.gamma * Math.PI) / 180;
+      const cb = Math.cos(b);
+      this.engine.setFusedUp(-cb * Math.sin(g), Math.sin(b), cb * Math.cos(g));
+    };
+    window.addEventListener("deviceorientation", onOrientation);
+    this.orientationHandler = onOrientation;
   }
 
   /**
@@ -1193,6 +1313,7 @@ export class ViroArSession {
     const [px, py, pz] = pos;
     const [qx, qy, qz, qw] = rot;
     this.opts.sceneApi.arSetPose(qx, qy, qz, qw, px, py, pz, injectedState);
+    this.updateLostVisibility(injectedState);
     // Mirror what the renderer draws, so hitTest unprojects through it.
     if (injectedState === ViroTrackingState.Normal) this.lastCamPos = [px, py, pz];
     if (injectedState !== ViroTrackingState.Unavailable) this.lastCamQuat = [qx, qy, qz, qw];
@@ -1208,6 +1329,29 @@ export class ViroArSession {
         this.updateCameraBackground(rgba, w, h);
       }
     }
+  }
+
+  /**
+   * Hide the scene's content after LOST_HIDE_FRAMES held frames in a row and
+   * show it again on the first frame the renderer draws from a fresh pose.
+   * The camera background is not a scene node, so the feed keeps drawing.
+   */
+  private updateLostVisibility(injectedState: ViroTrackingState): void {
+    if (this.opts.hideContentWhenLost === false) return;
+    if (injectedState !== ViroTrackingState.Unavailable) {
+      this.lostFrames = 0;
+      this.setContentHidden(false);
+      return;
+    }
+    if (++this.lostFrames >= LOST_HIDE_FRAMES) this.setContentHidden(true);
+  }
+
+  private setContentHidden(hidden: boolean): void {
+    if (hidden === this.contentHidden) return;
+    const root = this.opts.sceneApi.getRootNode();
+    if (!root) return;
+    this.opts.sceneApi.setNodeVisible(root, !hidden);
+    this.contentHidden = hidden;
   }
 
   /**
@@ -1407,6 +1551,15 @@ export async function requestDeviceMotionPermission(): Promise<boolean> {
     | { requestPermission?: () => Promise<"granted" | "denied"> }
     | undefined;
   if (!anyMotion) return false;
+  // Orientation is asked for alongside, inside the same gesture: a second
+  // request after an await has lost it and is refused. Not fatal either way --
+  // without it the engine falls back to the accelerometer's up.
+  const anyOrientation = (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent as
+    | { requestPermission?: () => Promise<"granted" | "denied"> }
+    | undefined;
+  if (typeof anyOrientation?.requestPermission === "function") {
+    anyOrientation.requestPermission().catch(() => undefined);
+  }
   if (typeof anyMotion.requestPermission === "function") {
     try {
       const result = await anyMotion.requestPermission();
