@@ -112,8 +112,6 @@ Three things a consumer's bundler must handle to run the ViroReact web bridge:
 2. **`react-native` → `react-native-web`** alias.
 3. **The WASM assets** — reachable at runtime. How you point the renderer at them depends on the bundler.
 
-> **Known issue (tracked for 3.0.3):** the Vite and webpack recipes below are not validated against the published `@reactvision/react-viro` 3.0.2, and they fail with it. Its `dist/` ships JSX untranspiled inside `.js` files, and `dist/index.js` pulls in `require("react-native/Libraries/Image/AssetSourceResolver")`, which `react-native-web` cannot satisfy. This package itself is unaffected; the bridge's own harness (`viro/web-harness/`) consumes the viro source tree.
-
 The glue is imported dynamically; by default it self-resolves the sidecars relative to its own URL, which works for plain ESM. Bundlers that rewrite `import.meta.url` need one of:
 
 - **`importGlue` + `locateFile`** — import each file with the bundler's asset syntax and hand back the URLs. Best for Vite and webpack.
@@ -226,6 +224,7 @@ const renderer = await ViroWebRenderer.create({ canvas });
 const session = new ViroArSession({
   sceneApi: renderer.scene,
   detectPlanes: true,
+  hideContentWhenLost: true,         // default; hides the content after ~0.25 s without a pose
   onStatus: (state, quality, detail) => {/* 1 Unavailable / 2 Limited / 3 Normal, debounced out of Normal; detail: { confidence, reason } */},
   onAnchorsUpdated: (planes) => {/* ArPlaneAnchor[] in Y-up world space */},
   onError: (err) => {/* shown to the user */},
@@ -240,7 +239,9 @@ Through the bridge, `ViroARSceneNavigator` uses this bundled engine by default; 
 
 `start()` **rejects** when it cannot start, after calling `onError`. Both happen: `onError` is where a UI shows the reason, and the rejection is what stops an `await session.start()` from continuing as though a session existed.
 
-`requestDeviceMotionPermission()` is exported to request iOS Safari's DeviceMotion permission from a tap.
+`requestDeviceMotionPermission()` is exported to request iOS Safari's DeviceMotion permission from a tap. It asks for DeviceOrientation permission in the same tap; without orientation the engine falls back to the accelerometer's up.
+
+When tracking is lost, the session hides the scene's content after about a quarter second and shows it again with the first fresh pose; the camera feed keeps drawing. Pass `hideContentWhenLost: false` to keep drawing the content from the last pose.
 
 ### What the tracking state does and does not tell you
 
