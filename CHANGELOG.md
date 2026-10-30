@@ -12,6 +12,8 @@ Needs the virocore web build of 3.1.0 and tinyvio's `setFusedUp`; both ship in t
   - iOS reports `accelerationIncludingGravity` with the opposite sign to the spec. The old single-axis flip was a reflection, not a rotation.
   - With tracking lost the renderer held the last pose, so the content rode along with the screen.
 
+- **Vertex colours show.** The engine's web shaders now multiply the vertex colour, as the native ones do (virocore 3.1.0's web build).
+
 ### Added
 
 - **`hideContentWhenLost`** (default true). After a quarter second without a pose the scene's content is hidden, and it comes back with the first fresh pose; the camera feed keeps drawing. `false` keeps the old behaviour.

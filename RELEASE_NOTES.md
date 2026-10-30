@@ -8,6 +8,8 @@ Web AR on iPhone: content stays where it was placed when you turn the phone, and
 
 - **Web AR content stays in the room on iPhone.** The gyro is read in WebKit's axis order, the camera-from-device rotation given to tinyvio is the physical one for a rear camera, and the accelerometer sign follows iOS. Before, content swung around when the phone turned in place.
 
+- **Vertex colours show.** The engine's web shaders now multiply the vertex colour, as the native ones do (virocore 3.1.0's web build).
+
 ### Added
 
 - **`hideContentWhenLost`** (default true): the scene's content hides after a quarter second without a pose and returns with the next one; the camera feed keeps drawing.
