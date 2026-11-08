@@ -14,6 +14,10 @@ Needs the virocore web build of 3.1.0 and tinyvio's `setFusedUp`; both ship in t
 
 - **Vertex colours show.** The engine's web shaders now multiply the vertex colour, as the native ones do (virocore 3.1.0's web build).
 
+- **Skinned GLBs draw.** The vertex shader took bone indices as signed integers while glTF's 8- and 16-bit joints are bound unsigned, and WebGL refused every draw of a skinned mesh (virocore 3.1.0's web build).
+
+- **More of glTF loads and draws (virocore 3.1.0's web build).** `KHR_texture_transform`, `KHR_node_visibility` and `KHR_animation_pointer`, textures on `TEXCOORD_1` and later sets, emissive textures and 8-bit index buffers. Opaque materials were see-through where their texture's alpha was low, characters whose rig animates a node above each joint stood in their bind pose, a file with animation pointers failed to load at all, and emission never showed on physically based materials.
+
 ### Added
 
 - **`hideContentWhenLost`** (default true). After a quarter second without a pose the scene's content is hidden, and it comes back with the first fresh pose; the camera feed keeps drawing. `false` keeps the old behaviour.
