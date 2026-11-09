@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+Needs the virocore web build of 3.1.1; it ships in this package.
+
+### Fixed
+
+- **Metal surfaces look metallic without an environment map,** an occlusion map on `TEXCOORD_1` samples that set, glTF `normalTexture.scale` and `occlusionTexture.strength` apply, and mirrored nodes draw their faces (virocore 3.1.1's web build).
+
 ## 1.1.0
 
 Needs the virocore web build of 3.1.0 and tinyvio's `setFusedUp`; both ship in this package.
