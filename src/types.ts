@@ -30,6 +30,7 @@ export interface ViroWebModule {
   viroSetNodeScale(node: number, x: number, y: number, z: number): void;
   viroSetNodeOpacity(node: number, opacity: number): void;
   viroSetNodeVisible(node: number, visible: boolean): void;
+  viroSetNodeSelectable(node: number, selectable: boolean): void;
   viroSetNodeGeometry(node: number, geometry: number): void;
   viroAddChildNode(parent: number, child: number): void;
   viroRemoveNodeFromParent(node: number): void;

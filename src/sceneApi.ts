@@ -268,6 +268,10 @@ export class ViroSceneApi {
   setNodeVisible(node: ViroHandle, visible: boolean): void {
     this.m.viroSetNodeVisible(node, visible);
   }
+  /** A node that is not selectable is skipped by taps and hit tests, along with its whole subtree. */
+  setNodeSelectable(node: ViroHandle, selectable: boolean): void {
+    this.m.viroSetNodeSelectable(node, selectable);
+  }
   setNodeGeometry(node: ViroHandle, geometry: ViroHandle): void {
     this.m.viroSetNodeGeometry(node, geometry);
   }
