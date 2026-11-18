@@ -18,6 +18,7 @@ export interface ViroWebModule {
 
   /** Feed a pointer/touch event. action: 0 = down, 1 = move, 2 = up. x/y in device pixels. */
   viroOnTouch(action: number, x: number, y: number): void;
+  viroStopMainLoop?(): void;
   viroOnPinch?(state: number, scale: number, x: number, y: number): void;
   viroOnRotate?(state: number, radians: number, x: number, y: number): void;
 

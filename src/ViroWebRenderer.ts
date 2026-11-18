@@ -73,6 +73,12 @@ function computeSize(
  * `create()` gives you an empty scene. Build into it through {@link scene},
  * the handle-based API the Viro web bridge's reconciler drives.
  */
+/** Context loss notifications; see ViroWebRenderer.isContextLost. */
+export interface ViroContextListener {
+  onLost?: () => void;
+  onRestored?: () => void;
+}
+
 export class ViroWebRenderer {
   private disposed = false;
   private detachInput?: () => void;
@@ -83,6 +89,9 @@ export class ViroWebRenderer {
   private readonly abortListeners = new Set<(error: ViroRendererAbortError) => void>();
   private readonly textFaces = new Map<string, Promise<boolean>>();
   private abortError: ViroRendererAbortError | null = null;
+  private contextLost = false;
+  private readonly contextListeners = new Set<ViroContextListener>();
+  private detachContext?: () => void;
 
   private constructor(
     private readonly module: ViroWebModule,
@@ -325,6 +334,7 @@ export class ViroWebRenderer {
       console.log("[Viro web] renderer build " + buildId);
     }
     renderer.attachInput();
+    renderer.attachContextLoss();
     return renderer;
   }
 
@@ -469,22 +479,61 @@ export class ViroWebRenderer {
   /**
    * Release references and stop responding to input.
    *
-   * NOTE: the WASM main loop is not stoppable from the C API yet — a proper
-   * teardown (emscripten_cancel_main_loop + context destroy) is a follow-up.
-   * Until then a disposed renderer keeps drawing, so an app that mounts and
-   * unmounts repeatedly accumulates render loops. Create one and keep it.
+   * Stops the render loop on a binary that can (older ones keep drawing).
    *
    * Any model load still in flight is settled as failed: its native callback
    * would have nowhere to arrive.
    */
   dispose(): void {
+    this.module.viroStopMainLoop?.();
     this.detachInput?.();
     this.detachInput = undefined;
+    this.detachContext?.();
+    this.detachContext = undefined;
+    this.contextListeners.clear();
     for (const resolve of this.modelLoadResolvers.values()) resolve(false);
     this.modelLoadResolvers.clear();
     this.eventHandlers.clear();
     this.animationHandlers.clear();
     this.disposed = true;
+  }
+
+  /**
+   * True once the browser has taken the WebGL context away (a GPU reset, or a
+   * mobile browser reclaiming memory). Nothing this renderer made comes back
+   * with the context: when it is restored, dispose this renderer and create a
+   * new one on the same canvas.
+   */
+  get isContextLost(): boolean {
+    return this.contextLost;
+  }
+
+  /** Be told when the context is lost and when it is back. Returns an unsubscribe. */
+  addContextListener(listener: ViroContextListener): () => void {
+    this.contextListeners.add(listener);
+    return () => {
+      this.contextListeners.delete(listener);
+    };
+  }
+
+  private attachContextLoss(): void {
+    const canvas = this.canvas;
+    const onLost = (e: Event) => {
+      // Without this the browser never restores the context.
+      e.preventDefault();
+      this.contextLost = true;
+      this.module.viroStopMainLoop?.();
+      for (const l of [...this.contextListeners]) l.onLost?.();
+    };
+    const onRestored = () => {
+      for (const l of [...this.contextListeners]) l.onRestored?.();
+    };
+    canvas.addEventListener("webglcontextlost", onLost);
+    canvas.addEventListener("webglcontextrestored", onRestored);
+    this.detachContext = () => {
+      canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
+    };
   }
 
   /**
