@@ -18,6 +18,8 @@ export interface ViroWebModule {
 
   /** Feed a pointer/touch event. action: 0 = down, 1 = move, 2 = up. x/y in device pixels. */
   viroOnTouch(action: number, x: number, y: number): void;
+  viroOnPinch?(state: number, scale: number, x: number, y: number): void;
+  viroOnRotate?(state: number, radians: number, x: number, y: number): void;
 
   /** Build the hardcoded demo cube scene (smoke test). */
   viroBuildDemoCube(): void;
@@ -41,6 +43,9 @@ export interface ViroWebModule {
   // axis: 0 X, 1 Y, 2 Z, 3 all; anything else removes the constraint.
   viroSetNodeBillboard(node: number, axis: number): void;
   viroGetNodeWorldPosition(node: number): number[];
+  viroGetNodeWorldTransform?(node: number): number[];
+  viroGetNodeBoundingBox?(node: number): number[];
+  viroSetNodeTimeToFuse?(node: number, millis: number): void;
 
   viroCreateBox(width: number, height: number, length: number): number;
   viroCreateSphere(radius: number): number;

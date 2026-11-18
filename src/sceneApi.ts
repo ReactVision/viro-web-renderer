@@ -240,6 +240,16 @@ export enum ViroEventAction {
   Hover = 1,
   Click = 2,
   Touch = 3,
+  Fuse = 9,
+  Pinch = 10,
+  Rotate = 11,
+}
+
+/** Mirrors VROEventDelegate::PinchState and RotateState. */
+export enum ViroGestureState {
+  Start = 1,
+  Move = 2,
+  End = 3,
 }
 
 /** Mirrors VROEventDelegate::ClickState. */
@@ -267,6 +277,29 @@ export interface ViroNodeEventHandlers {
     source: number,
     position: [number, number, number],
   ) => void;
+  /** scale is cumulative from 1 at the start. */
+  onPinch?: (state: ViroGestureState, scale: number, source: number) => void;
+  /** Radians, counterclockwise on screen, cumulative from 0 at the start. */
+  onRotate?: (state: ViroGestureState, radians: number, source: number) => void;
+  /** The gaze (screen centre) stayed on the node for its time to fuse. */
+  onFuse?: (source: number) => void;
+}
+
+/** A node's last-frame world transform; rotation in degrees. */
+export interface ViroNodeTransform {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+}
+
+/** A node's and its subtree's bounding box. */
+export interface ViroBoundingBox {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
 }
 
 /**
@@ -353,6 +386,33 @@ export class ViroSceneApi {
     const p = this.m.viroGetNodeWorldPosition(node);
     if (!p || p.length < 3) return null;
     return [p[0]!, p[1]!, p[2]!];
+  }
+  /**
+   * Last frame's world transform, decomposed as native's getTransformAsync does,
+   * or null on a binary without it. Zero until the node has been drawn once.
+   */
+  getNodeWorldTransform(node: ViroHandle): ViroNodeTransform | null {
+    const t = this.m.viroGetNodeWorldTransform?.(node);
+    if (!t || t.length < 9) return null;
+    return {
+      position: [t[0]!, t[1]!, t[2]!],
+      rotation: [t[3]!, t[4]!, t[5]!],
+      scale: [t[6]!, t[7]!, t[8]!],
+    };
+  }
+  /** The node's and its subtree's box, or null on a binary without it. */
+  getNodeBoundingBox(node: ViroHandle): ViroBoundingBox | null {
+    const b = this.m.viroGetNodeBoundingBox?.(node);
+    if (!b || b.length < 6) return null;
+    return { minX: b[0]!, maxX: b[1]!, minY: b[2]!, maxY: b[3]!, minZ: b[4]!, maxZ: b[5]! };
+  }
+  /** How long the gaze must rest on the node before onFuse; virocore's default is 2000 ms. */
+  setNodeTimeToFuse(node: ViroHandle, millis: number): void {
+    this.m.viroSetNodeTimeToFuse?.(node, millis);
+  }
+  /** False on a binary without pinch, rotate, fuse and the node transform reads. */
+  get supportsGestures(): boolean {
+    return typeof this.m.viroOnPinch === "function";
   }
 
   // --- Geometries ---

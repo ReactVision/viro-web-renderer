@@ -12,6 +12,7 @@ export {
   ViroLightingModel,
   ViroLightType,
   ViroEventAction,
+  ViroGestureState,
   ViroClickState,
   ViroTextureChannel,
   ViroWrapMode,
@@ -42,6 +43,8 @@ export type {
   ViroTextStyle,
   ViroHandle,
   ViroNodeEventHandlers,
+  ViroNodeTransform,
+  ViroBoundingBox,
   ViroAnimationHandlers,
   ViroShaderEntryPoint,
 } from "./sceneApi.js";

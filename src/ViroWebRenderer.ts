@@ -288,6 +288,12 @@ export class ViroWebRenderer {
       handlers.onClick?.(intArg, source, position);
     } else if (action === ViroEventAction.Hover) {
       handlers.onHover?.(intArg === 1, source, position);
+    } else if (action === ViroEventAction.Pinch) {
+      handlers.onPinch?.(intArg, position[0], source);
+    } else if (action === ViroEventAction.Rotate) {
+      handlers.onRotate?.(intArg, position[0], source);
+    } else if (action === ViroEventAction.Fuse) {
+      handlers.onFuse?.(source);
     }
   }
 
@@ -325,31 +331,119 @@ export class ViroWebRenderer {
   /**
    * Forward canvas pointer events to the renderer as touch actions, converting
    * CSS coordinates to the canvas's device-pixel backing store.
+   *
+   * A second finger turns the touch into a pinch and a rotate, as on a phone:
+   * the first finger's press is cancelled without a click, both gestures start
+   * on the node under the fingers' midpoint, and nothing more reaches the scene
+   * until every finger has lifted. `pointercancel` cancels the press too, for
+   * any pointer id (the virtual camera sends one when it takes two fingers).
    */
   private attachInput(): void {
     const canvas = this.canvas;
-    const send = (action: number, e: PointerEvent) => {
+    const m = this.module;
+    const toCanvas = (clientX: number, clientY: number): [number, number] | null => {
       const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-      const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-      this.module.viroOnTouch(action, x, y);
+      if (rect.width === 0 || rect.height === 0) return null;
+      return [(clientX - rect.left) * (canvas.width / rect.width), (clientY - rect.top) * (canvas.height / rect.height)];
+    };
+    const send = (action: number, e: PointerEvent) => {
+      const p = toCanvas(e.clientX, e.clientY);
+      if (p) m.viroOnTouch(action, p[0], p[1]);
     };
 
-    const onDown = (e: PointerEvent) => send(0, e);
-    const onMove = (e: PointerEvent) => send(1, e);
-    const onUp = (e: PointerEvent) => send(2, e);
+    const fingers = new Map<number, { x: number; y: number }>();
+    // Starts on the first move, as iOS and Android recognisers do: two fingers
+    // that land and lift without moving are no gesture at all.
+    let gesture: { spread: number; angle: number; started: boolean; at: [number, number] } | null = null;
+    // Set once a gesture starts and cleared when the last finger lifts.
+    let held = false;
+    const pair = () => {
+      const [a, b] = [...fingers.values()];
+      return {
+        mid: toCanvas((a!.x + b!.x) / 2, (a!.y + b!.y) / 2),
+        spread: Math.hypot(b!.x - a!.x, b!.y - a!.y),
+        angle: Math.atan2(b!.y - a!.y, b!.x - a!.x),
+      };
+    };
+    const gestureEvent = (state: number, scale: number, radians: number, at: [number, number]) => {
+      m.viroOnPinch!(state, scale, at[0], at[1]);
+      m.viroOnRotate!(state, radians, at[0], at[1]);
+    };
+    let last = { scale: 1, radians: 0, at: [0, 0] as [number, number] };
+    const endGesture = () => {
+      if (gesture?.started) gestureEvent(3, last.scale, last.radians, last.at);
+      gesture = null;
+    };
+
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch" && typeof m.viroOnPinch === "function") {
+        fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (fingers.size === 2 && !held) {
+          held = true;
+          m.viroOnTouch(3, 0, 0);
+          const p = pair();
+          if (p.mid && p.spread > 0) {
+            gesture = { spread: p.spread, angle: p.angle, started: false, at: p.mid };
+            last = { scale: 1, radians: 0, at: p.mid };
+          }
+        }
+        if (held) return;
+      }
+      send(0, e);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (fingers.has(e.pointerId)) {
+        fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (held) {
+          if (gesture && fingers.size >= 2) {
+            if (!gesture.started) {
+              gesture.started = true;
+              gestureEvent(1, 1, 0, gesture.at);
+            }
+            const p = pair();
+            // Screen y points down, so a clockwise turn grows the angle; native
+            // reports counterclockwise as positive.
+            let turn = gesture.angle - p.angle;
+            turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+            last = { scale: p.spread / gesture.spread, radians: last.radians + turn, at: p.mid ?? last.at };
+            gesture.angle = p.angle;
+            gestureEvent(2, last.scale, last.radians, last.at);
+          }
+          return;
+        }
+      }
+      send(1, e);
+    };
+    const onUp = (e: PointerEvent) => {
+      fingers.delete(e.pointerId);
+      if (held) {
+        if (fingers.size < 2) endGesture();
+        if (fingers.size === 0) held = false;
+        return;
+      }
+      send(2, e);
+    };
+    // Any id ends the press: the virtual camera cancels with the second finger's
+    // id and then keeps both fingers' events to itself.
+    const onCancel = (e: PointerEvent) => {
+      if (held) {
+        onUp(e);
+        return;
+      }
+      fingers.clear();
+      m.viroOnTouch(3, 0, 0);
+    };
 
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
-    canvas.addEventListener("pointercancel", onUp);
+    canvas.addEventListener("pointercancel", onCancel);
 
     this.detachInput = () => {
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("pointercancel", onUp);
+      canvas.removeEventListener("pointercancel", onCancel);
     };
   }
 
