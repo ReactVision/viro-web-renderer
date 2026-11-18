@@ -56,6 +56,16 @@ export enum ViroBlendMode {
   Screen = 5,
 }
 
+/** Bits of VROColorMask (VRODriver.h); combine with `|`. */
+export enum ViroColorWriteMask {
+  None = 0,
+  Red = 1,
+  Green = 2,
+  Blue = 4,
+  Alpha = 8,
+  All = 15,
+}
+
 /** Mirrors VROShaderEntryPoint (VROShaderModifier.h). Unknown strings fall back to "fragment". */
 export type ViroShaderEntryPoint =
   | "geometry"
@@ -501,6 +511,28 @@ export class ViroSceneApi {
   }
   setMaterialReadsFromDepthBuffer(material: ViroHandle, reads: boolean): void {
     this.m.viroSetMaterialReadsFromDepthBuffer(material, reads);
+  }
+  /**
+   * False on a binary without the four setters below, where they do nothing:
+   * alpha, bloom threshold, colour write mask and chroma key.
+   */
+  get supportsMaterialEffects(): boolean {
+    return typeof this.m.viroSetMaterialTransparency === "function";
+  }
+  /** 0 to 1, multiplied with the diffuse colour's alpha and the node's opacity. */
+  setMaterialAlpha(material: ViroHandle, alpha: number): void {
+    this.m.viroSetMaterialTransparency?.(material, alpha);
+  }
+  /** Under 0 (the default, -1) keeps the material out of the bloom pass. */
+  setMaterialBloomThreshold(material: ViroHandle, threshold: number): void {
+    this.m.viroSetMaterialBloomThreshold?.(material, threshold);
+  }
+  setMaterialColorWriteMask(material: ViroHandle, mask: ViroColorWriteMask | number): void {
+    this.m.viroSetMaterialColorWriteMask?.(material, mask);
+  }
+  /** Pixels near `color` are discarded; null turns the filter off. */
+  setMaterialChromaKey(material: ViroHandle, color: { r: number; g: number; b: number } | null): void {
+    this.m.viroSetMaterialChromaKey?.(material, color !== null, color?.r ?? 0, color?.g ?? 1, color?.b ?? 0);
   }
   // shaderCode should already have any `uniforms` declarations prepended
   // (uniforms + "\n" + body) — the caller owns that concatenation, same as

@@ -18,6 +18,7 @@ export {
   ViroFilterMode,
   ViroCullMode,
   ViroBlendMode,
+  ViroColorWriteMask,
   ViroModelFormat,
   ViroEasing,
   ViroTrackingState,

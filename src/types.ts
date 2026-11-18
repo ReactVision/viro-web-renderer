@@ -99,6 +99,10 @@ export interface ViroWebModule {
   viroSetMaterialBlendMode(material: number, mode: number): void;
   viroSetMaterialWritesToDepthBuffer(material: number, writes: boolean): void;
   viroSetMaterialReadsFromDepthBuffer(material: number, reads: boolean): void;
+  viroSetMaterialTransparency?(material: number, alpha: number): void;
+  viroSetMaterialBloomThreshold?(material: number, threshold: number): void;
+  viroSetMaterialColorWriteMask?(material: number, mask: number): void;
+  viroSetMaterialChromaKey?(material: number, enabled: boolean, r: number, g: number, b: number): void;
   // shaderCode is the modifier body with any `uniforms` block already
   // prepended by the caller (uniforms + "\n" + body), matching the native
   // bridges' convention. varyings is optional; pass undefined for none.
