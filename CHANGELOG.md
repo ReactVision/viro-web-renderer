@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- **The canvas is opaque, as a native view is.** Empty space showed the page behind the canvas; it now shows the scene's clear colour (black).
 - **`dispose()` stops the render loop.** A disposed renderer kept drawing, so every remount added another loop.
 - **`pointercancel` no longer completes a click.** It was sent as a release and could click the pressed node.
 
