@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Styled text:** `ViroSceneApi.createStyledText` takes a family list, weight, italic, extrusion depth and an outline or drop shadow, and `ViroWebRenderer.loadTextFace` fetches the Roboto face a weight or italic needs from beside the wasm. The 11 faces ship as `wasm/Roboto-*.ttf`; `viro-web.data` is unchanged. On an older binary `createStyledText` draws plain text.
+
 ## 1.1.1
 
 Needs the virocore web build of 3.1.1; it ships in this package.

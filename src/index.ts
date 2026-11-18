@@ -22,6 +22,7 @@ export {
   ViroEasing,
   ViroTrackingState,
   ViroTextHorizontalAlignment,
+  ViroTextOuterStroke,
   ViroTextVerticalAlignment,
   ViroLineBreakMode,
   ViroTextClipMode,
@@ -37,6 +38,7 @@ export {
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type {
+  ViroTextStyle,
   ViroHandle,
   ViroNodeEventHandlers,
   ViroAnimationHandlers,

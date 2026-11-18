@@ -66,6 +66,27 @@ export type ViroShaderEntryPoint =
   | "image";
 
 /** Text horizontal alignment (mirrors VROTextHorizontalAlignment). */
+export enum ViroTextOuterStroke {
+  None = 0,
+  Outline = 1,
+  DropShadow = 2,
+}
+
+/** What createStyledText adds to createText, with ViroText's defaults when left out. */
+export interface ViroTextStyle {
+  /** Comma-separated families, tried in order; a family this build lacks draws in Roboto. */
+  typefaces?: string;
+  /** 100 to 900. Faces other than the regular one need ViroWebRenderer.loadTextFace first. */
+  weight?: number;
+  italic?: boolean;
+  /** Depth of 3D text; 0 draws flat text. */
+  extrusion?: number;
+  stroke?: ViroTextOuterStroke;
+  /** In glyph pixels, as native takes it. */
+  strokeWidth?: number;
+  strokeColor?: { r: number; g: number; b: number; a: number };
+}
+
 export enum ViroTextHorizontalAlignment {
   Left = 0,
   Right = 1,
@@ -380,6 +401,39 @@ export class ViroSceneApi {
       color.b,
       color.a,
     );
+  }
+  /** False on a binary without styled text, where createStyledText draws plain text. */
+  get supportsTextStyle(): boolean {
+    return typeof this.m.viroCreateStyledText === "function";
+  }
+  createStyledText(
+    text: string,
+    width: number,
+    height: number,
+    fontSize: number,
+    hAlign: ViroTextHorizontalAlignment,
+    vAlign: ViroTextVerticalAlignment,
+    lineBreak: ViroLineBreakMode,
+    clipMode: ViroTextClipMode,
+    maxLines: number,
+    color: { r: number; g: number; b: number; a: number },
+    style: ViroTextStyle,
+  ): ViroHandle {
+    if (typeof this.m.viroCreateStyledText !== "function") {
+      return this.createText(text, width, height, fontSize, hAlign, vAlign, lineBreak, clipMode, maxLines, color);
+    }
+    return this.m.viroCreateStyledText(text, {
+      ...style,
+      width,
+      height,
+      fontSize,
+      hAlign,
+      vAlign,
+      lineBreak,
+      clipMode,
+      maxLines,
+      color,
+    });
   }
   /** points: flat [x,y,z, …]. */
   createPolyline(points: Float32Array | number[], thickness: number): ViroHandle {

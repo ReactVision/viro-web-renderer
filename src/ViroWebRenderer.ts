@@ -8,7 +8,7 @@ import {
   type ViroAnimationHandlers,
 } from "./sceneApi.js";
 import { ViroRendererAbortError } from "./types.js";
-import type { ViroWebModule, ViroWebRendererOptions } from "./types.js";
+import type { LocateFile, ViroWebModule, ViroWebRendererOptions } from "./types.js";
 
 const MODEL_EXT: Record<ViroModelFormat, string> = {
   [ViroModelFormat.GLB]: "glb",
@@ -81,6 +81,7 @@ export class ViroWebRenderer {
   private readonly modelLoadResolvers = new Map<ViroHandle, (success: boolean) => void>();
   private readonly animationHandlers = new Map<ViroHandle, ViroAnimationHandlers>();
   private readonly abortListeners = new Set<(error: ViroRendererAbortError) => void>();
+  private readonly textFaces = new Map<string, Promise<boolean>>();
   private abortError: ViroRendererAbortError | null = null;
 
   private constructor(
@@ -194,6 +195,40 @@ export class ViroWebRenderer {
         // Already gone, or a second load into the node replaced it.
       }
     }
+  }
+
+  /**
+   * Makes the face a text at `weight` (100 to 900) and `italic` draws in ready
+   * to use. Only the regular face is preloaded; the others are served beside
+   * the wasm and fetched the first time a text asks for them, and stay in the
+   * FS after. Resolves false when the face could not be had, in which case
+   * such a text draws in the regular face.
+   */
+  loadTextFace(weight = 400, italic = false): Promise<boolean> {
+    const file = this.module.viroTextFaceFile?.(weight, italic);
+    if (!file || file === "Roboto") return Promise.resolve(true);
+    let pending = this.textFaces.get(file);
+    if (!pending) {
+      const locate = this.module.locateFile as LocateFile | undefined;
+      const url = locate ? locate(`${file}.ttf`, "") : `${file}.ttf`;
+      pending = fetch(url)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.arrayBuffer();
+        })
+        .then((buf) => {
+          this.module.FS.writeFile(`/${file}.ttf`, new Uint8Array(buf));
+          return true;
+        })
+        .catch((err) => {
+          console.warn(`[Viro web] could not load the ${file} face from ${url} (${err}); drawing that text in Roboto`);
+          // Asked again next time, rather than failing for the rest of the page.
+          this.textFaces.delete(file);
+          return false;
+        });
+      this.textFaces.set(file, pending);
+    }
+    return pending;
   }
 
   /**

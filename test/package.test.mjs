@@ -81,6 +81,14 @@ if (!haveWasm) {
     "viro-web.data names a font but carries no TrueType or OpenType data",
   );
   console.log(`  ok  ${preloaded.join(", ")} preloaded, and redistributable`);
+
+  // Every face VROTypefaceWasm::systemFaceFile can name, served beside the wasm.
+  const faces = ["Thin", "Light", "Medium", "Bold", "Black"]
+    .flatMap((w) => [`Roboto-${w}`, `Roboto-${w}Italic`])
+    .concat("Roboto-Italic");
+  const absentFaces = faces.filter((f) => !existsSync(`${root}wasm/${f}.ttf`));
+  assert.deepEqual(absentFaces, [], "Roboto faces missing beside the wasm -- run npm run copy-wasm");
+  console.log(`  ok  ${faces.length} Roboto faces beside the wasm`);
 }
 
 const pkg = JSON.parse(read("package.json").toString());

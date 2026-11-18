@@ -68,6 +68,11 @@ export interface ViroWebModule {
     b: number,
     a: number,
   ): number;
+  // viroCreateText's fields by name, plus the style; see ViroSceneApi.createStyledText.
+  // Absent from binaries before 1.2.0, as is viroTextFaceFile.
+  viroCreateStyledText?(text: string, options: Record<string, unknown>): number;
+  // The face file (no suffix) a text at this weight and style draws in.
+  viroTextFaceFile?(weight: number, italic: boolean): string;
   // Flat [x,y,z, …] point list.
   viroCreatePolyline(points: Float32Array | number[], thickness: number): number;
   viroCreatePolygon(points: Float32Array | number[]): number;
