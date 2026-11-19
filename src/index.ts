@@ -36,6 +36,7 @@ export {
   ViroPhysicsBodyType,
   ViroPhysicsShapeType,
   type ViroCollision,
+  type ViroStereoMode,
   type ViroParticleBurst,
   type ViroParticleEmitterConfig,
   type ViroPhysicsForce,

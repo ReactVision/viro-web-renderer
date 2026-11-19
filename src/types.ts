@@ -51,6 +51,12 @@ export interface ViroWebModule {
 
   viroCreateBox(width: number, height: number, length: number): number;
   viroCreateSphere(radius: number): number;
+  viroCreateSphereEx?(
+    radius: number,
+    widthSegments: number,
+    heightSegments: number,
+    facesOutward: boolean,
+  ): number;
   viroCreateSurface(width: number, height: number): number;
   viroCreateSurfaceUV(
     width: number,
@@ -83,6 +89,14 @@ export interface ViroWebModule {
   // Flat [x,y,z, …] point list.
   viroCreatePolyline(points: Float32Array | number[], thickness: number): number;
   viroCreatePolygon(points: Float32Array | number[]): number;
+  viroCreatePolygonEx?(
+    points: Float32Array | number[],
+    holes: (Float32Array | number[])[],
+    u0: number,
+    v0: number,
+    u1: number,
+    v1: number,
+  ): number;
   // Custom mesh: flat vertex/normal [x,y,z,…], texcoord [u,v,…], triangle indices.
   viroCreateGeometry(
     vertices: Float32Array | number[],
@@ -223,6 +237,8 @@ export interface ViroWebModule {
     height: number,
     sRGB: boolean,
   ): number;
+  // mode: 1 None, 2 LeftRight, 3 RightLeft, 4 TopBottom, 5 BottomTop.
+  viroSetTextureStereoMode?(texture: number, mode: number): void;
   viroSetTextureWrap(texture: number, wrapS: number, wrapT: number): void;
   viroSetTextureFilter(texture: number, min: number, mag: number, mip: number): void;
   viroSetMaterialTexture(material: number, channel: number, texture: number): void;

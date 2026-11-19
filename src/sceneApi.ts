@@ -15,6 +15,11 @@ export enum ViroLightingModel {
 }
 
 /** Texture channel on a material (matches viroSetMaterialTexture in VROSceneWeb.cpp). */
+/** Native's stereoMode prop values. */
+export type ViroStereoMode = "None" | "LeftRight" | "RightLeft" | "TopBottom" | "BottomTop";
+// In VROStereoMode's order, which starts at 1.
+const STEREO_MODES: ViroStereoMode[] = ["None", "LeftRight", "RightLeft", "TopBottom", "BottomTop"];
+
 export enum ViroTextureChannel {
   Diffuse = 0,
   Specular = 1,
@@ -464,6 +469,16 @@ export class ViroSceneApi {
   createSphere(radius: number): ViroHandle {
     return this.m.viroCreateSphere(radius);
   }
+  /** createSphere with segment counts and facing. 0 when the wasm predates it. */
+  createSphereEx(
+    radius: number,
+    widthSegments: number,
+    heightSegments: number,
+    facesOutward: boolean,
+  ): ViroHandle {
+    if (typeof this.m.viroCreateSphereEx !== "function") return 0;
+    return this.m.viroCreateSphereEx(radius, widthSegments, heightSegments, facesOutward);
+  }
   createSurface(width: number, height: number): ViroHandle {
     return this.m.viroCreateSurface(width, height);
   }
@@ -554,6 +569,18 @@ export class ViroSceneApi {
   /** points: flat [x,y,z, …] perimeter. */
   createPolygon(points: Float32Array | number[]): ViroHandle {
     return this.m.viroCreatePolygon(points);
+  }
+  /**
+   * createPolygon with holes (each a flat [x,y,z, …] list) and the UV rectangle
+   * [u0, v0, u1, v1]. 0 when the wasm predates it.
+   */
+  createPolygonEx(
+    points: Float32Array | number[],
+    holes: (Float32Array | number[])[],
+    uv: [number, number, number, number],
+  ): ViroHandle {
+    if (typeof this.m.viroCreatePolygonEx !== "function") return 0;
+    return this.m.viroCreatePolygonEx(points, holes, uv[0], uv[1], uv[2], uv[3]);
   }
   /** Custom mesh. normals/texcoords may be empty; indices are triangles. */
   createGeometry(
@@ -941,6 +968,19 @@ export class ViroSceneApi {
     sRGB: boolean,
   ): ViroHandle {
     return this.m.viroCreateTextureRGBA(pixels, width, height, sRGB);
+  }
+  /**
+   * Show one half of a stereo image (the left eye's, as a phone does). Set it
+   * before the texture goes on a material. The mode is matched ignoring case, as
+   * native does. False when the wasm predates it or the mode is not one of them.
+   */
+  setTextureStereoMode(texture: ViroHandle, mode: ViroStereoMode): boolean {
+    if (typeof this.m.viroSetTextureStereoMode !== "function") return false;
+    const wanted = String(mode).toLowerCase();
+    const index = STEREO_MODES.findIndex((m) => m.toLowerCase() === wanted);
+    if (index < 0) return false;
+    this.m.viroSetTextureStereoMode(texture, index + 1);
+    return true;
   }
   setTextureWrap(texture: ViroHandle, wrapS: ViroWrapMode, wrapT: ViroWrapMode): void {
     this.m.viroSetTextureWrap(texture, wrapS, wrapT);
