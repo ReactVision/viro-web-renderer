@@ -323,6 +323,8 @@ export interface ViroWebModule {
   viroPauseAnimation(nodeHandle: number): void;
   viroResumeAnimation(nodeHandle: number): void;
   viroStopAnimation(nodeHandle: number, jumpToEnd: boolean): void;
+  /** Present on a binary whose pause, resume and stop also reach declarative passes. */
+  viroCanPauseDeclarativeAnimations?(): boolean;
 
   // Declarative animations (transform/opacity via transaction): wrap node
   // property setters between begin/commit. easing: 0=Linear..5=PowerDecel.

@@ -1133,6 +1133,14 @@ export class ViroSceneApi {
   stopAnimation(node: ViroHandle, jumpToEnd = false): void {
     this.m.viroStopAnimation(node, jumpToEnd);
   }
+  /**
+   * True when pauseAnimation, resumeAnimation and stopAnimation also reach the
+   * node's declarative pass (beginAnimation/commitAnimation), not only a model's
+   * own animation. False on a binary built before that.
+   */
+  get supportsAnimationPause(): boolean {
+    return typeof this.m.viroCanPauseDeclarativeAnimations === "function";
+  }
 
   // --- Declarative animations (transform/opacity via transaction) ---
   beginAnimation(
