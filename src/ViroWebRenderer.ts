@@ -401,7 +401,20 @@ export class ViroWebRenderer {
       }
       send(0, e);
     };
+    // A mouse moves the hover, as a headset's controller ray does, and leaving
+    // the canvas hands it back to the screen-centre gaze. Touch and pen never
+    // hover, so phones and AR keep the gaze.
+    const hover = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || typeof m.viroOnPointerHover !== "function") return;
+      const p = toCanvas(e.clientX, e.clientY);
+      if (p) m.viroOnPointerHover(true, p[0], p[1]);
+    };
+    const onLeave = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") m.viroOnPointerHover?.(false, 0, 0);
+    };
+
     const onMove = (e: PointerEvent) => {
+      hover(e);
       if (fingers.has(e.pointerId)) {
         fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (held) {
@@ -448,12 +461,14 @@ export class ViroWebRenderer {
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
     canvas.addEventListener("pointercancel", onCancel);
+    canvas.addEventListener("pointerleave", onLeave);
 
     this.detachInput = () => {
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("pointercancel", onCancel);
+      canvas.removeEventListener("pointerleave", onLeave);
     };
   }
 

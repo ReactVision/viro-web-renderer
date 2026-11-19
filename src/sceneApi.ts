@@ -162,6 +162,46 @@ export interface ViroCollision {
   normal: [number, number, number];
 }
 
+/** A burst of particles, as ViroParticleEmitter's `emissionBurst` entries. */
+export interface ViroParticleBurst {
+  /** What `start` and `interval` count: milliseconds, or metres the emitter travelled. */
+  factor: "time" | "distance";
+  start: number;
+  interval: number;
+  min: number;
+  max: number;
+  cycles: number;
+}
+
+/** Live emitter settings; an absent key leaves the emitter as it is. */
+export interface ViroParticleEmitterConfig {
+  delay?: number;
+  duration?: number;
+  loop?: boolean;
+  fixedToEmitter?: boolean;
+  /** A material blend mode name: "Add", "Alpha", "Multiply", "Subtract", "Screen" or "None". */
+  blendMode?: string;
+  /** -1 turns bloom off. */
+  bloomThreshold?: number;
+  emissionRatePerSecond?: [number, number];
+  emissionRatePerMeter?: [number, number];
+  particleLifetime?: [number, number];
+  maxParticles?: number;
+  velocity?: { min: [number, number, number]; max: [number, number, number] };
+  spawnVolume?: { shape: ViroParticleSpawnShape; params: number[]; onSurface: boolean };
+  bursts?: ViroParticleBurst[];
+  /** null clears it. */
+  explosion?: { position: [number, number, number]; impulse: number; deceleration?: number } | null;
+  /** Restart the emission cycle; true also drops the live particles. */
+  reset?: boolean;
+}
+
+/** A force on a physics body, at `position` from its centre. */
+export interface ViroPhysicsForce {
+  value: [number, number, number];
+  position?: [number, number, number];
+}
+
 /** Free axis for a billboard constraint (mirrors VROBillboardAxis). */
 export enum ViroBillboardAxis {
   X = 0,
@@ -309,6 +349,8 @@ export interface ViroBoundingBox {
  */
 export class ViroSceneApi {
   constructor(private readonly m: ViroWebModule) {}
+
+  private portalHandlers: Map<ViroHandle, (entered: boolean) => void> | null = null;
 
   // --- Nodes ---
   getRootNode(): ViroHandle {
@@ -524,6 +566,31 @@ export class ViroSceneApi {
   }
   setGeometryMaterial(geometry: ViroHandle, material: ViroHandle): void {
     this.m.viroSetGeometryMaterial(geometry, material);
+  }
+  /**
+   * Custom mesh with one element per submesh, each taking the material at its
+   * own index. 0 when the wasm predates submeshes or nothing was built.
+   */
+  createGeometrySubmeshes(
+    vertices: Float32Array | number[],
+    normals: Float32Array | number[],
+    texcoords: Float32Array | number[],
+    submeshes: number[][],
+  ): ViroHandle {
+    if (typeof this.m.viroCreateGeometrySubmeshes !== "function") return 0;
+    return this.m.viroCreateGeometrySubmeshes(
+      vertices,
+      normals,
+      texcoords,
+      submeshes.flat(),
+      submeshes.map((indices) => indices.length),
+    );
+  }
+  /** Every material at once (a box takes one per face). False when unsupported. */
+  setGeometryMaterials(geometry: ViroHandle, materials: ViroHandle[]): boolean {
+    if (typeof this.m.viroSetGeometryMaterials !== "function") return false;
+    this.m.viroSetGeometryMaterials(geometry, materials);
+    return true;
   }
   destroyGeometry(geometry: ViroHandle): void {
     this.m.viroDestroyGeometry(geometry);
@@ -808,6 +875,51 @@ export class ViroSceneApi {
     if (typeof this.m.viroApplyPhysicsTorque !== "function") return;
     this.m.viroApplyPhysicsTorque(node, torque[0], torque[1], torque[2]);
   }
+  /**
+   * Native's `force` and `torque`: applied on every step until replaced. Send
+   * them again after setPhysicsBody, which starts a body with none. False when
+   * unsupported.
+   */
+  setPhysicsForces(
+    node: ViroHandle,
+    forces: ViroPhysicsForce[],
+    torque: [number, number, number] = [0, 0, 0],
+  ): boolean {
+    if (typeof this.m.viroSetPhysicsForces !== "function") return false;
+    const flat = forces.flatMap((f) => [...f.value, ...(f.position ?? [0, 0, 0])]);
+    this.m.viroSetPhysicsForces(node, flat, torque[0], torque[1], torque[2]);
+    return true;
+  }
+  /**
+   * Whether a ray hits a body. Each body hit reports a collision with `tag` as
+   * its other tag. null when unsupported.
+   */
+  findCollisionsWithRay(
+    from: [number, number, number],
+    to: [number, number, number],
+    closest: boolean,
+    tag: string,
+  ): boolean | null {
+    if (typeof this.m.viroFindCollisionsWithRay !== "function") return null;
+    return this.m.viroFindCollisionsWithRay(...from, ...to, closest, tag);
+  }
+  /** As findCollisionsWithRay, sweeping a shape (`setPhysicsBody`'s types and params). */
+  findCollisionsWithShape(
+    from: [number, number, number],
+    to: [number, number, number],
+    shapeType: ViroPhysicsShapeType,
+    params: number[],
+    tag: string,
+  ): boolean | null {
+    if (typeof this.m.viroFindCollisionsWithShape !== "function") return null;
+    return this.m.viroFindCollisionsWithShape(...from, ...to, shapeType, params, tag);
+  }
+  /** physicsWorld.drawBounds: every body's collider as lines. False when unsupported. */
+  setPhysicsDebugDraw(visible: boolean): boolean {
+    if (typeof this.m.viroSetPhysicsDebugDraw !== "function") return false;
+    this.m.viroSetPhysicsDebugDraw(visible);
+    return true;
+  }
   clearPhysicsBody(node: ViroHandle): void {
     if (typeof this.m.viroClearPhysicsBody !== "function") return;
     this.m.viroClearPhysicsBody(node);
@@ -899,6 +1011,32 @@ export class ViroSceneApi {
   setBackgroundRotation(x: number, y: number, z: number): void {
     this.m.viroSetBackgroundRotation(x, y, z);
   }
+  /**
+   * The background of the portal `node` is in (or is), as a 360 image, 360
+   * video or skybox inside a portal scene sets it natively; the scene's own
+   * outside any. False when the wasm only has the scene-wide setters.
+   */
+  setNodeBackgroundSphere(node: ViroHandle, texture: ViroHandle): boolean {
+    if (typeof this.m.viroSetNodeBackgroundSphere !== "function") return false;
+    this.m.viroSetNodeBackgroundSphere(node, texture);
+    return true;
+  }
+  setNodeBackgroundCube(node: ViroHandle, texture: ViroHandle): boolean {
+    if (typeof this.m.viroSetNodeBackgroundCube !== "function") return false;
+    this.m.viroSetNodeBackgroundCube(node, texture);
+    return true;
+  }
+  setNodeBackgroundRotation(node: ViroHandle, x: number, y: number, z: number): boolean {
+    if (typeof this.m.viroSetNodeBackgroundRotation !== "function") return false;
+    this.m.viroSetNodeBackgroundRotation(node, x, y, z);
+    return true;
+  }
+  /** Clear the background of the portal `node` is in (or is). False when unsupported. */
+  removeNodeBackground(node: ViroHandle): boolean {
+    if (typeof this.m.viroRemoveNodeBackground !== "function") return false;
+    this.m.viroRemoveNodeBackground(node);
+    return true;
+  }
 
   // --- Lighting environment (IBL) ---
   /** Load a radiance .hdr already written to the FS at `path` → texture handle. */
@@ -922,6 +1060,24 @@ export class ViroSceneApi {
   }
   setPortalPassable(portalScene: ViroHandle, passable: boolean): void {
     this.m.viroSetPortalPassable(portalScene, passable);
+  }
+  /**
+   * Called with true when the camera walks into the portal scene and false when
+   * it walks out; null stops. False when the wasm cannot report crossings.
+   */
+  setPortalHandler(portalScene: ViroHandle, handler: ((entered: boolean) => void) | null): boolean {
+    if (typeof this.m.viroSetPortalEventsEnabled !== "function" || typeof this.m.viroSetPortalCallback !== "function") {
+      return false;
+    }
+    if (!this.portalHandlers) {
+      const handlers = new Map<ViroHandle, (entered: boolean) => void>();
+      this.portalHandlers = handlers;
+      this.m.viroSetPortalCallback((portal, entered) => handlers.get(portal)?.(entered));
+    }
+    if (handler) this.portalHandlers.set(portalScene, handler);
+    else this.portalHandlers.delete(portalScene);
+    this.m.viroSetPortalEventsEnabled(portalScene, !!handler);
+    return true;
   }
 
   // --- Particles ---
@@ -1012,6 +1168,40 @@ export class ViroSceneApi {
   }
   setParticleEmitterRun(node: ViroHandle, run: boolean): void {
     this.m.viroSetParticleEmitterRun(node, run);
+  }
+  /** Settings on a live emitter. False when the wasm predates them. */
+  configureParticleEmitter(node: ViroHandle, config: ViroParticleEmitterConfig): boolean {
+    if (typeof this.m.viroConfigureParticleEmitter !== "function") return false;
+    const c: Record<string, unknown> = {};
+    const plain = ["delay", "duration", "loop", "fixedToEmitter", "blendMode", "bloomThreshold", "maxParticles", "reset"] as const;
+    for (const key of plain) {
+      if (config[key] !== undefined) c[key] = config[key];
+    }
+    for (const key of ["emissionRatePerSecond", "emissionRatePerMeter", "particleLifetime"] as const) {
+      const range = config[key];
+      if (range) c[key] = [...range];
+    }
+    if (config.velocity) c.velocity = [...config.velocity.min, ...config.velocity.max];
+    if (config.spawnVolume) {
+      const v = config.spawnVolume;
+      c.spawnVolume = [v.shape, v.onSurface ? 1 : 0, ...v.params];
+    }
+    if (config.bursts) {
+      c.bursts = config.bursts.flatMap((b) => [
+        b.factor === "distance" ? 1 : 0,
+        b.start,
+        b.interval,
+        b.min,
+        b.max,
+        b.cycles,
+      ]);
+    }
+    if (config.explosion !== undefined) {
+      const x = config.explosion;
+      c.explosion = x ? [...x.position, x.impulse, x.deceleration ?? -1] : [0, 0, 0, -1, -1];
+    }
+    this.m.viroConfigureParticleEmitter(node, c);
+    return true;
   }
 
   // --- Lights ---

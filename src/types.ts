@@ -21,6 +21,7 @@ export interface ViroWebModule {
   viroStopMainLoop?(): void;
   viroOnPinch?(state: number, scale: number, x: number, y: number): void;
   viroOnRotate?(state: number, radians: number, x: number, y: number): void;
+  viroOnPointerHover?(active: boolean, x: number, y: number): void;
 
   /** Build the hardcoded demo cube scene (smoke test). */
   viroBuildDemoCube(): void;
@@ -90,6 +91,14 @@ export interface ViroWebModule {
     indices: Uint32Array | number[],
   ): number;
   viroSetGeometryMaterial(geometry: number, material: number): void;
+  viroSetGeometryMaterials?(geometry: number, materials: number[]): void;
+  viroCreateGeometrySubmeshes?(
+    vertices: Float32Array | number[],
+    normals: Float32Array | number[],
+    texcoords: Float32Array | number[],
+    indices: Uint32Array | number[],
+    counts: number[],
+  ): number;
   viroDestroyGeometry(geometry: number): void;
 
   viroCreateMaterial(): number;
@@ -186,6 +195,18 @@ export interface ViroWebModule {
   viroSetPhysicsVelocity(node: number, x: number, y: number, z: number, isConstant: boolean): void;
   viroApplyPhysicsImpulse(node: number, x: number, y: number, z: number): void;
   viroApplyPhysicsTorque(node: number, x: number, y: number, z: number): void;
+  viroSetPhysicsForces?(node: number, forces: number[], tx: number, ty: number, tz: number): void;
+  viroFindCollisionsWithRay?(
+    fx: number, fy: number, fz: number,
+    tx: number, ty: number, tz: number,
+    closest: boolean, tag: string,
+  ): boolean;
+  viroFindCollisionsWithShape?(
+    fx: number, fy: number, fz: number,
+    tx: number, ty: number, tz: number,
+    shapeType: number, params: number[], tag: string,
+  ): boolean;
+  viroSetPhysicsDebugDraw?(visible: boolean): void;
   viroClearPhysicsBody(node: number): void;
   viroSetCollisionCallback(
     cb: (
@@ -229,6 +250,10 @@ export interface ViroWebModule {
   viroSetBackgroundSphere(texture: number): void;
   viroSetBackgroundCube(texture: number): void;
   viroSetBackgroundRotation(x: number, y: number, z: number): void;
+  viroSetNodeBackgroundSphere?(node: number, texture: number): void;
+  viroSetNodeBackgroundCube?(node: number, texture: number): void;
+  viroSetNodeBackgroundRotation?(node: number, x: number, y: number, z: number): void;
+  viroRemoveNodeBackground?(node: number): void;
 
   // Particle emitter attached to a node. spawnShape: 0 Box, 1 Sphere, 2 Point.
   // Portals: a portal scene (VROPortal) + entrance frame (VROPortalFrame).
@@ -236,6 +261,8 @@ export interface ViroWebModule {
   viroCreatePortalFrame(): number;
   viroSetPortalEntrance(portalScene: number, frame: number): void;
   viroSetPortalPassable(portalScene: number, passable: boolean): void;
+  viroSetPortalCallback?(cb: (portalScene: number, entered: boolean) => void): void;
+  viroSetPortalEventsEnabled?(portalScene: number, enabled: boolean): void;
 
   viroCreateParticleEmitter(
     node: number,
@@ -259,6 +286,7 @@ export interface ViroWebModule {
     velMaxZ: number,
   ): number;
   viroSetParticleEmitterRun(node: number, run: boolean): void;
+  viroConfigureParticleEmitter?(node: number, config: Record<string, unknown>): void;
   viroSetParticleAcceleration(
     node: number,
     minX: number, minY: number, minZ: number,

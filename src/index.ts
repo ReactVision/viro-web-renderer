@@ -36,6 +36,9 @@ export {
   ViroPhysicsBodyType,
   ViroPhysicsShapeType,
   type ViroCollision,
+  type ViroParticleBurst,
+  type ViroParticleEmitterConfig,
+  type ViroPhysicsForce,
   VIRO_COMPOUND_CHILD_STRIDE,
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
