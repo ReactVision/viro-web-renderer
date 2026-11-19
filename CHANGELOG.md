@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Styled text:** `ViroSceneApi.createStyledText` takes a family list, weight, italic, extrusion depth and an outline or drop shadow, and `ViroWebRenderer.loadTextFace` fetches the Roboto face a weight or italic needs from beside the wasm. The 11 faces ship as `wasm/Roboto-*.ttf`; `viro-web.data` is unchanged. On an older binary `createStyledText` draws plain text.
+- **Material alpha, bloom threshold, colour write mask and chroma key:** `ViroSceneApi.setMaterialAlpha`, `setMaterialBloomThreshold`, `setMaterialColorWriteMask` (`ViroColorWriteMask` bits) and `setMaterialChromaKey`. On an older binary they do nothing and `supportsMaterialEffects` is false.
+- **Pinch, rotate and fuse:** two touch pointers on the canvas become a pinch and a rotate on the node under their midpoint, as on iOS and Android (`ViroNodeEventHandlers.onPinch`, `onRotate`, and `onFuse` for the screen-centre gaze, with `ViroSceneApi.setNodeTimeToFuse`). They start on the first two-finger move; the first finger's press is cancelled without a click.
+- **Node reads:** `ViroSceneApi.getNodeWorldTransform` and `getNodeBoundingBox`, decomposed as native's `getTransformAsync` and `getBoundingBoxAsync` are. `supportsGestures` is false on an older binary.
+- **Context loss:** `ViroWebRenderer.isContextLost` and `addContextListener`. After a restore, dispose the renderer and create a new one on the same canvas.
+
+### Fixed
+
+- **The canvas is opaque, as a native view is.** Empty space showed the page behind the canvas; it now shows the scene's clear colour (black).
+- **`dispose()` stops the render loop.** A disposed renderer kept drawing, so every remount added another loop.
+- **`pointercancel` no longer completes a click.** It was sent as a release and could click the pressed node.
+
 ## 1.1.1
 
 Needs the virocore web build of 3.1.1; it ships in this package.

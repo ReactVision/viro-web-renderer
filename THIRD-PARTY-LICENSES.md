@@ -46,8 +46,10 @@ This software is based in part on the work of the Independent JPEG Group.
 ## Roboto
 
 The typeface every text geometry renders in, baked into `wasm/viro-web.data`
-and therefore redistributed with this package. Roboto is also what Viro renders
-text in on Android and Quest, so the three agree.
+and therefore redistributed with this package. Its other weights and italics
+(`wasm/Roboto-*.ttf`, from Android's system fonts) ship beside the wasm and are
+fetched when a text uses them. Roboto is also what Viro renders text in on
+Android and Quest, so the three agree.
 
 Copyright the Roboto Project Authors, licensed under the Apache License,
 Version 2.0. You may obtain a copy of the licence at

@@ -56,6 +56,16 @@ export enum ViroBlendMode {
   Screen = 5,
 }
 
+/** Bits of VROColorMask (VRODriver.h); combine with `|`. */
+export enum ViroColorWriteMask {
+  None = 0,
+  Red = 1,
+  Green = 2,
+  Blue = 4,
+  Alpha = 8,
+  All = 15,
+}
+
 /** Mirrors VROShaderEntryPoint (VROShaderModifier.h). Unknown strings fall back to "fragment". */
 export type ViroShaderEntryPoint =
   | "geometry"
@@ -66,6 +76,27 @@ export type ViroShaderEntryPoint =
   | "image";
 
 /** Text horizontal alignment (mirrors VROTextHorizontalAlignment). */
+export enum ViroTextOuterStroke {
+  None = 0,
+  Outline = 1,
+  DropShadow = 2,
+}
+
+/** What createStyledText adds to createText, with ViroText's defaults when left out. */
+export interface ViroTextStyle {
+  /** Comma-separated families, tried in order; a family this build lacks draws in Roboto. */
+  typefaces?: string;
+  /** 100 to 900. Faces other than the regular one need ViroWebRenderer.loadTextFace first. */
+  weight?: number;
+  italic?: boolean;
+  /** Depth of 3D text; 0 draws flat text. */
+  extrusion?: number;
+  stroke?: ViroTextOuterStroke;
+  /** In glyph pixels, as native takes it. */
+  strokeWidth?: number;
+  strokeColor?: { r: number; g: number; b: number; a: number };
+}
+
 export enum ViroTextHorizontalAlignment {
   Left = 0,
   Right = 1,
@@ -209,6 +240,16 @@ export enum ViroEventAction {
   Hover = 1,
   Click = 2,
   Touch = 3,
+  Fuse = 9,
+  Pinch = 10,
+  Rotate = 11,
+}
+
+/** Mirrors VROEventDelegate::PinchState and RotateState. */
+export enum ViroGestureState {
+  Start = 1,
+  Move = 2,
+  End = 3,
 }
 
 /** Mirrors VROEventDelegate::ClickState. */
@@ -236,6 +277,29 @@ export interface ViroNodeEventHandlers {
     source: number,
     position: [number, number, number],
   ) => void;
+  /** scale is cumulative from 1 at the start. */
+  onPinch?: (state: ViroGestureState, scale: number, source: number) => void;
+  /** Radians, counterclockwise on screen, cumulative from 0 at the start. */
+  onRotate?: (state: ViroGestureState, radians: number, source: number) => void;
+  /** The gaze (screen centre) stayed on the node for its time to fuse. */
+  onFuse?: (source: number) => void;
+}
+
+/** A node's last-frame world transform; rotation in degrees. */
+export interface ViroNodeTransform {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+}
+
+/** A node's and its subtree's bounding box. */
+export interface ViroBoundingBox {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
 }
 
 /**
@@ -267,6 +331,10 @@ export class ViroSceneApi {
   }
   setNodeVisible(node: ViroHandle, visible: boolean): void {
     this.m.viroSetNodeVisible(node, visible);
+  }
+  /** A node that is not selectable is skipped by taps and hit tests, along with its whole subtree. */
+  setNodeSelectable(node: ViroHandle, selectable: boolean): void {
+    this.m.viroSetNodeSelectable(node, selectable);
   }
   setNodeGeometry(node: ViroHandle, geometry: ViroHandle): void {
     this.m.viroSetNodeGeometry(node, geometry);
@@ -318,6 +386,33 @@ export class ViroSceneApi {
     const p = this.m.viroGetNodeWorldPosition(node);
     if (!p || p.length < 3) return null;
     return [p[0]!, p[1]!, p[2]!];
+  }
+  /**
+   * Last frame's world transform, decomposed as native's getTransformAsync does,
+   * or null on a binary without it. Zero until the node has been drawn once.
+   */
+  getNodeWorldTransform(node: ViroHandle): ViroNodeTransform | null {
+    const t = this.m.viroGetNodeWorldTransform?.(node);
+    if (!t || t.length < 9) return null;
+    return {
+      position: [t[0]!, t[1]!, t[2]!],
+      rotation: [t[3]!, t[4]!, t[5]!],
+      scale: [t[6]!, t[7]!, t[8]!],
+    };
+  }
+  /** The node's and its subtree's box, or null on a binary without it. */
+  getNodeBoundingBox(node: ViroHandle): ViroBoundingBox | null {
+    const b = this.m.viroGetNodeBoundingBox?.(node);
+    if (!b || b.length < 6) return null;
+    return { minX: b[0]!, maxX: b[1]!, minY: b[2]!, maxY: b[3]!, minZ: b[4]!, maxZ: b[5]! };
+  }
+  /** How long the gaze must rest on the node before onFuse; virocore's default is 2000 ms. */
+  setNodeTimeToFuse(node: ViroHandle, millis: number): void {
+    this.m.viroSetNodeTimeToFuse?.(node, millis);
+  }
+  /** False on a binary without pinch, rotate, fuse and the node transform reads. */
+  get supportsGestures(): boolean {
+    return typeof this.m.viroOnPinch === "function";
   }
 
   // --- Geometries ---
@@ -376,6 +471,39 @@ export class ViroSceneApi {
       color.b,
       color.a,
     );
+  }
+  /** False on a binary without styled text, where createStyledText draws plain text. */
+  get supportsTextStyle(): boolean {
+    return typeof this.m.viroCreateStyledText === "function";
+  }
+  createStyledText(
+    text: string,
+    width: number,
+    height: number,
+    fontSize: number,
+    hAlign: ViroTextHorizontalAlignment,
+    vAlign: ViroTextVerticalAlignment,
+    lineBreak: ViroLineBreakMode,
+    clipMode: ViroTextClipMode,
+    maxLines: number,
+    color: { r: number; g: number; b: number; a: number },
+    style: ViroTextStyle,
+  ): ViroHandle {
+    if (typeof this.m.viroCreateStyledText !== "function") {
+      return this.createText(text, width, height, fontSize, hAlign, vAlign, lineBreak, clipMode, maxLines, color);
+    }
+    return this.m.viroCreateStyledText(text, {
+      ...style,
+      width,
+      height,
+      fontSize,
+      hAlign,
+      vAlign,
+      lineBreak,
+      clipMode,
+      maxLines,
+      color,
+    });
   }
   /** points: flat [x,y,z, …]. */
   createPolyline(points: Float32Array | number[], thickness: number): ViroHandle {
@@ -443,6 +571,28 @@ export class ViroSceneApi {
   }
   setMaterialReadsFromDepthBuffer(material: ViroHandle, reads: boolean): void {
     this.m.viroSetMaterialReadsFromDepthBuffer(material, reads);
+  }
+  /**
+   * False on a binary without the four setters below, where they do nothing:
+   * alpha, bloom threshold, colour write mask and chroma key.
+   */
+  get supportsMaterialEffects(): boolean {
+    return typeof this.m.viroSetMaterialTransparency === "function";
+  }
+  /** 0 to 1, multiplied with the diffuse colour's alpha and the node's opacity. */
+  setMaterialAlpha(material: ViroHandle, alpha: number): void {
+    this.m.viroSetMaterialTransparency?.(material, alpha);
+  }
+  /** Under 0 (the default, -1) keeps the material out of the bloom pass. */
+  setMaterialBloomThreshold(material: ViroHandle, threshold: number): void {
+    this.m.viroSetMaterialBloomThreshold?.(material, threshold);
+  }
+  setMaterialColorWriteMask(material: ViroHandle, mask: ViroColorWriteMask | number): void {
+    this.m.viroSetMaterialColorWriteMask?.(material, mask);
+  }
+  /** Pixels near `color` are discarded; null turns the filter off. */
+  setMaterialChromaKey(material: ViroHandle, color: { r: number; g: number; b: number } | null): void {
+    this.m.viroSetMaterialChromaKey?.(material, color !== null, color?.r ?? 0, color?.g ?? 1, color?.b ?? 0);
   }
   // shaderCode should already have any `uniforms` declarations prepended
   // (uniforms + "\n" + body) — the caller owns that concatenation, same as

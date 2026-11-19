@@ -4,7 +4,7 @@
  * WebAssembly/WebGL2 build of the Viro renderer (virocore) for the web platform.
  */
 
-export { ViroWebRenderer } from "./ViroWebRenderer.js";
+export { ViroWebRenderer, type ViroContextListener } from "./ViroWebRenderer.js";
 export { loadViroWebModule } from "./loader.js";
 export { loadBundledSlam } from "./slamLoader.js";
 export {
@@ -12,16 +12,19 @@ export {
   ViroLightingModel,
   ViroLightType,
   ViroEventAction,
+  ViroGestureState,
   ViroClickState,
   ViroTextureChannel,
   ViroWrapMode,
   ViroFilterMode,
   ViroCullMode,
   ViroBlendMode,
+  ViroColorWriteMask,
   ViroModelFormat,
   ViroEasing,
   ViroTrackingState,
   ViroTextHorizontalAlignment,
+  ViroTextOuterStroke,
   ViroTextVerticalAlignment,
   ViroLineBreakMode,
   ViroTextClipMode,
@@ -37,8 +40,11 @@ export {
   VIRO_INVALID_HANDLE,
 } from "./sceneApi.js";
 export type {
+  ViroTextStyle,
   ViroHandle,
   ViroNodeEventHandlers,
+  ViroNodeTransform,
+  ViroBoundingBox,
   ViroAnimationHandlers,
   ViroShaderEntryPoint,
 } from "./sceneApi.js";
