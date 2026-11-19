@@ -18,6 +18,9 @@ export interface ViroWebModule {
 
   /** Feed a pointer/touch event. action: 0 = down, 1 = move, 2 = up. x/y in device pixels. */
   viroOnTouch(action: number, x: number, y: number): void;
+  viroStopMainLoop?(): void;
+  viroOnPinch?(state: number, scale: number, x: number, y: number): void;
+  viroOnRotate?(state: number, radians: number, x: number, y: number): void;
 
   /** Build the hardcoded demo cube scene (smoke test). */
   viroBuildDemoCube(): void;
@@ -30,6 +33,7 @@ export interface ViroWebModule {
   viroSetNodeScale(node: number, x: number, y: number, z: number): void;
   viroSetNodeOpacity(node: number, opacity: number): void;
   viroSetNodeVisible(node: number, visible: boolean): void;
+  viroSetNodeSelectable(node: number, selectable: boolean): void;
   viroSetNodeGeometry(node: number, geometry: number): void;
   viroAddChildNode(parent: number, child: number): void;
   viroRemoveNodeFromParent(node: number): void;
@@ -40,6 +44,9 @@ export interface ViroWebModule {
   // axis: 0 X, 1 Y, 2 Z, 3 all; anything else removes the constraint.
   viroSetNodeBillboard(node: number, axis: number): void;
   viroGetNodeWorldPosition(node: number): number[];
+  viroGetNodeWorldTransform?(node: number): number[];
+  viroGetNodeBoundingBox?(node: number): number[];
+  viroSetNodeTimeToFuse?(node: number, millis: number): void;
 
   viroCreateBox(width: number, height: number, length: number): number;
   viroCreateSphere(radius: number): number;
@@ -67,6 +74,11 @@ export interface ViroWebModule {
     b: number,
     a: number,
   ): number;
+  // viroCreateText's fields by name, plus the style; see ViroSceneApi.createStyledText.
+  // Absent from binaries before 1.2.0, as is viroTextFaceFile.
+  viroCreateStyledText?(text: string, options: Record<string, unknown>): number;
+  // The face file (no suffix) a text at this weight and style draws in.
+  viroTextFaceFile?(weight: number, italic: boolean): string;
   // Flat [x,y,z, …] point list.
   viroCreatePolyline(points: Float32Array | number[], thickness: number): number;
   viroCreatePolygon(points: Float32Array | number[]): number;
@@ -93,6 +105,10 @@ export interface ViroWebModule {
   viroSetMaterialBlendMode(material: number, mode: number): void;
   viroSetMaterialWritesToDepthBuffer(material: number, writes: boolean): void;
   viroSetMaterialReadsFromDepthBuffer(material: number, reads: boolean): void;
+  viroSetMaterialTransparency?(material: number, alpha: number): void;
+  viroSetMaterialBloomThreshold?(material: number, threshold: number): void;
+  viroSetMaterialColorWriteMask?(material: number, mask: number): void;
+  viroSetMaterialChromaKey?(material: number, enabled: boolean, r: number, g: number, b: number): void;
   // shaderCode is the modifier body with any `uniforms` block already
   // prepended by the caller (uniforms + "\n" + body), matching the native
   // bridges' convention. varyings is optional; pass undefined for none.

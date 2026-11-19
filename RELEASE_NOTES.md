@@ -1,5 +1,27 @@
 # Release Notes
 
+## 1.2.0
+
+Styled text, material effects, pinch, rotate and fuse, node transform and bounding box reads, and recovery from a lost WebGL context: what viro's web components need to match native in `@reactvision/react-viro` 3.2.2.
+
+### Added
+
+- **Styled text:** `createStyledText` with a family list, weight, italic, extrusion and an outline or drop shadow; `loadTextFace` fetches the Roboto face a weight or italic needs, once per page.
+- **Material effects:** `setMaterialAlpha`, `setMaterialBloomThreshold`, `setMaterialColorWriteMask` and `setMaterialChromaKey`.
+- **Pinch, rotate and fuse** on the node under two fingers, and `setNodeTimeToFuse`.
+- **Node reads:** `getNodeWorldTransform` and `getNodeBoundingBox`, in native's shapes.
+- **Context loss:** `isContextLost` and `addContextListener`.
+
+### Fixed
+
+- **The canvas is opaque,** as a native view is.
+- **`dispose()` stops the render loop,** so a remount no longer adds a loop.
+- **`pointercancel` no longer completes a click.**
+
+### Check when upgrading
+
+- **Copy the whole `wasm/` folder:** it now carries the 11 Roboto faces beside `viro-web.wasm`, fetched when a text asks for a weight or italic.
+
 ## 1.1.0
 
 Web AR on iPhone: content stays where it was placed when you turn the phone, and hides instead of riding along on the screen while tracking is lost. The compiled renderer is virocore 3.1.0, and the tracker is tinyvio with `setFusedUp`.

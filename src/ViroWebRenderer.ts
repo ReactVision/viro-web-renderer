@@ -8,7 +8,7 @@ import {
   type ViroAnimationHandlers,
 } from "./sceneApi.js";
 import { ViroRendererAbortError } from "./types.js";
-import type { ViroWebModule, ViroWebRendererOptions } from "./types.js";
+import type { LocateFile, ViroWebModule, ViroWebRendererOptions } from "./types.js";
 
 const MODEL_EXT: Record<ViroModelFormat, string> = {
   [ViroModelFormat.GLB]: "glb",
@@ -73,6 +73,12 @@ function computeSize(
  * `create()` gives you an empty scene. Build into it through {@link scene},
  * the handle-based API the Viro web bridge's reconciler drives.
  */
+/** Context loss notifications; see ViroWebRenderer.isContextLost. */
+export interface ViroContextListener {
+  onLost?: () => void;
+  onRestored?: () => void;
+}
+
 export class ViroWebRenderer {
   private disposed = false;
   private detachInput?: () => void;
@@ -81,7 +87,11 @@ export class ViroWebRenderer {
   private readonly modelLoadResolvers = new Map<ViroHandle, (success: boolean) => void>();
   private readonly animationHandlers = new Map<ViroHandle, ViroAnimationHandlers>();
   private readonly abortListeners = new Set<(error: ViroRendererAbortError) => void>();
+  private readonly textFaces = new Map<string, Promise<boolean>>();
   private abortError: ViroRendererAbortError | null = null;
+  private contextLost = false;
+  private readonly contextListeners = new Set<ViroContextListener>();
+  private detachContext?: () => void;
 
   private constructor(
     private readonly module: ViroWebModule,
@@ -197,6 +207,40 @@ export class ViroWebRenderer {
   }
 
   /**
+   * Makes the face a text at `weight` (100 to 900) and `italic` draws in ready
+   * to use. Only the regular face is preloaded; the others are served beside
+   * the wasm and fetched the first time a text asks for them, and stay in the
+   * FS after. Resolves false when the face could not be had, in which case
+   * such a text draws in the regular face.
+   */
+  loadTextFace(weight = 400, italic = false): Promise<boolean> {
+    const file = this.module.viroTextFaceFile?.(weight, italic);
+    if (!file || file === "Roboto") return Promise.resolve(true);
+    let pending = this.textFaces.get(file);
+    if (!pending) {
+      const locate = this.module.locateFile as LocateFile | undefined;
+      const url = locate ? locate(`${file}.ttf`, "") : `${file}.ttf`;
+      pending = fetch(url)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.arrayBuffer();
+        })
+        .then((buf) => {
+          this.module.FS.writeFile(`/${file}.ttf`, new Uint8Array(buf));
+          return true;
+        })
+        .catch((err) => {
+          console.warn(`[Viro web] could not load the ${file} face from ${url} (${err}); drawing that text in Roboto`);
+          // Asked again next time, rather than failing for the rest of the page.
+          this.textFaces.delete(file);
+          return false;
+        });
+      this.textFaces.set(file, pending);
+    }
+    return pending;
+  }
+
+  /**
    * Load a radiance .hdr from a URL and apply it as the scene's IBL lighting
    * environment. Fetches the bytes, writes them to the WASM FS, then loads +
    * applies via the C API. Returns the texture handle (0 on failure).
@@ -253,6 +297,12 @@ export class ViroWebRenderer {
       handlers.onClick?.(intArg, source, position);
     } else if (action === ViroEventAction.Hover) {
       handlers.onHover?.(intArg === 1, source, position);
+    } else if (action === ViroEventAction.Pinch) {
+      handlers.onPinch?.(intArg, position[0], source);
+    } else if (action === ViroEventAction.Rotate) {
+      handlers.onRotate?.(intArg, position[0], source);
+    } else if (action === ViroEventAction.Fuse) {
+      handlers.onFuse?.(source);
     }
   }
 
@@ -284,37 +334,126 @@ export class ViroWebRenderer {
       console.log("[Viro web] renderer build " + buildId);
     }
     renderer.attachInput();
+    renderer.attachContextLoss();
     return renderer;
   }
 
   /**
    * Forward canvas pointer events to the renderer as touch actions, converting
    * CSS coordinates to the canvas's device-pixel backing store.
+   *
+   * A second finger turns the touch into a pinch and a rotate, as on a phone:
+   * the first finger's press is cancelled without a click, both gestures start
+   * on the node under the fingers' midpoint, and nothing more reaches the scene
+   * until every finger has lifted. `pointercancel` cancels the press too, for
+   * any pointer id (the virtual camera sends one when it takes two fingers).
    */
   private attachInput(): void {
     const canvas = this.canvas;
-    const send = (action: number, e: PointerEvent) => {
+    const m = this.module;
+    const toCanvas = (clientX: number, clientY: number): [number, number] | null => {
       const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-      const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-      this.module.viroOnTouch(action, x, y);
+      if (rect.width === 0 || rect.height === 0) return null;
+      return [(clientX - rect.left) * (canvas.width / rect.width), (clientY - rect.top) * (canvas.height / rect.height)];
+    };
+    const send = (action: number, e: PointerEvent) => {
+      const p = toCanvas(e.clientX, e.clientY);
+      if (p) m.viroOnTouch(action, p[0], p[1]);
     };
 
-    const onDown = (e: PointerEvent) => send(0, e);
-    const onMove = (e: PointerEvent) => send(1, e);
-    const onUp = (e: PointerEvent) => send(2, e);
+    const fingers = new Map<number, { x: number; y: number }>();
+    // Starts on the first move, as iOS and Android recognisers do: two fingers
+    // that land and lift without moving are no gesture at all.
+    let gesture: { spread: number; angle: number; started: boolean; at: [number, number] } | null = null;
+    // Set once a gesture starts and cleared when the last finger lifts.
+    let held = false;
+    const pair = () => {
+      const [a, b] = [...fingers.values()];
+      return {
+        mid: toCanvas((a!.x + b!.x) / 2, (a!.y + b!.y) / 2),
+        spread: Math.hypot(b!.x - a!.x, b!.y - a!.y),
+        angle: Math.atan2(b!.y - a!.y, b!.x - a!.x),
+      };
+    };
+    const gestureEvent = (state: number, scale: number, radians: number, at: [number, number]) => {
+      m.viroOnPinch!(state, scale, at[0], at[1]);
+      m.viroOnRotate!(state, radians, at[0], at[1]);
+    };
+    let last = { scale: 1, radians: 0, at: [0, 0] as [number, number] };
+    const endGesture = () => {
+      if (gesture?.started) gestureEvent(3, last.scale, last.radians, last.at);
+      gesture = null;
+    };
+
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch" && typeof m.viroOnPinch === "function") {
+        fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (fingers.size === 2 && !held) {
+          held = true;
+          m.viroOnTouch(3, 0, 0);
+          const p = pair();
+          if (p.mid && p.spread > 0) {
+            gesture = { spread: p.spread, angle: p.angle, started: false, at: p.mid };
+            last = { scale: 1, radians: 0, at: p.mid };
+          }
+        }
+        if (held) return;
+      }
+      send(0, e);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (fingers.has(e.pointerId)) {
+        fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (held) {
+          if (gesture && fingers.size >= 2) {
+            if (!gesture.started) {
+              gesture.started = true;
+              gestureEvent(1, 1, 0, gesture.at);
+            }
+            const p = pair();
+            // Screen y points down, so a clockwise turn grows the angle; native
+            // reports counterclockwise as positive.
+            let turn = gesture.angle - p.angle;
+            turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+            last = { scale: p.spread / gesture.spread, radians: last.radians + turn, at: p.mid ?? last.at };
+            gesture.angle = p.angle;
+            gestureEvent(2, last.scale, last.radians, last.at);
+          }
+          return;
+        }
+      }
+      send(1, e);
+    };
+    const onUp = (e: PointerEvent) => {
+      fingers.delete(e.pointerId);
+      if (held) {
+        if (fingers.size < 2) endGesture();
+        if (fingers.size === 0) held = false;
+        return;
+      }
+      send(2, e);
+    };
+    // Any id ends the press: the virtual camera cancels with the second finger's
+    // id and then keeps both fingers' events to itself.
+    const onCancel = (e: PointerEvent) => {
+      if (held) {
+        onUp(e);
+        return;
+      }
+      fingers.clear();
+      m.viroOnTouch(3, 0, 0);
+    };
 
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
-    canvas.addEventListener("pointercancel", onUp);
+    canvas.addEventListener("pointercancel", onCancel);
 
     this.detachInput = () => {
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("pointercancel", onUp);
+      canvas.removeEventListener("pointercancel", onCancel);
     };
   }
 
@@ -340,22 +479,61 @@ export class ViroWebRenderer {
   /**
    * Release references and stop responding to input.
    *
-   * NOTE: the WASM main loop is not stoppable from the C API yet — a proper
-   * teardown (emscripten_cancel_main_loop + context destroy) is a follow-up.
-   * Until then a disposed renderer keeps drawing, so an app that mounts and
-   * unmounts repeatedly accumulates render loops. Create one and keep it.
+   * Stops the render loop on a binary that can (older ones keep drawing).
    *
    * Any model load still in flight is settled as failed: its native callback
    * would have nowhere to arrive.
    */
   dispose(): void {
+    this.module.viroStopMainLoop?.();
     this.detachInput?.();
     this.detachInput = undefined;
+    this.detachContext?.();
+    this.detachContext = undefined;
+    this.contextListeners.clear();
     for (const resolve of this.modelLoadResolvers.values()) resolve(false);
     this.modelLoadResolvers.clear();
     this.eventHandlers.clear();
     this.animationHandlers.clear();
     this.disposed = true;
+  }
+
+  /**
+   * True once the browser has taken the WebGL context away (a GPU reset, or a
+   * mobile browser reclaiming memory). Nothing this renderer made comes back
+   * with the context: when it is restored, dispose this renderer and create a
+   * new one on the same canvas.
+   */
+  get isContextLost(): boolean {
+    return this.contextLost;
+  }
+
+  /** Be told when the context is lost and when it is back. Returns an unsubscribe. */
+  addContextListener(listener: ViroContextListener): () => void {
+    this.contextListeners.add(listener);
+    return () => {
+      this.contextListeners.delete(listener);
+    };
+  }
+
+  private attachContextLoss(): void {
+    const canvas = this.canvas;
+    const onLost = (e: Event) => {
+      // Without this the browser never restores the context.
+      e.preventDefault();
+      this.contextLost = true;
+      this.module.viroStopMainLoop?.();
+      for (const l of [...this.contextListeners]) l.onLost?.();
+    };
+    const onRestored = () => {
+      for (const l of [...this.contextListeners]) l.onRestored?.();
+    };
+    canvas.addEventListener("webglcontextlost", onLost);
+    canvas.addEventListener("webglcontextrestored", onRestored);
+    this.detachContext = () => {
+      canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
+    };
   }
 
   /**
