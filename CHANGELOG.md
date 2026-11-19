@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
+
+Needs the virocore web build of 3.2.2 (styled text, material effects, two-finger gestures, node reads); it ships in this package, with the 11 Roboto faces styled text draws in.
 
 ### Added
 
