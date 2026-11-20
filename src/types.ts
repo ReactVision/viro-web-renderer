@@ -167,6 +167,8 @@ export interface ViroWebModule {
   viroSetShadowsEnabled(enabled: boolean): boolean;
   // The tone curve on its own, so a caller can drop Hable without dropping PBR.
   viroSetToneMappingEnabled(enabled: boolean): void;
+  // Returns how many of the names the engine knows, or -1 with no scene.
+  viroSetPostProcessEffects?(effects: string[]): number;
   // The virocore commit this binary was built from, dirty flag and date.
   viroGetBuildId(): string;
 

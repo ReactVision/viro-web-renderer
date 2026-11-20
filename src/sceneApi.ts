@@ -844,6 +844,15 @@ export class ViroSceneApi {
     this.m.viroSetToneMappingEnabled(enabled);
     return true;
   }
+  /**
+   * Full-screen effects (grayscale, sepia, ...), applied in order; an empty list
+   * clears them. They run only while HDR is on, as on native. Returns how many
+   * names the engine knows, or -1 on a binary without effects.
+   */
+  setPostProcessEffects(effects: string[]): number {
+    if (typeof this.m.viroSetPostProcessEffects !== "function") return -1;
+    return this.m.viroSetPostProcessEffects(effects);
+  }
 
   // --- Physics ---
   //
