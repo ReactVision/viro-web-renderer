@@ -383,6 +383,27 @@ export class ViroSceneApi {
   setNodeSelectable(node: ViroHandle, selectable: boolean): void {
     this.m.viroSetNodeSelectable(node, selectable);
   }
+  /** Node-local point the rotation turns about. False on a binary without pivots. */
+  setNodeRotationPivot(node: ViroHandle, x: number, y: number, z: number): boolean {
+    if (typeof this.m.viroSetNodeRotationPivot !== "function") return false;
+    this.m.viroSetNodeRotationPivot(node, x, y, z);
+    return true;
+  }
+  /** Node-local point the scale grows from. False on a binary without pivots. */
+  setNodeScalePivot(node: ViroHandle, x: number, y: number, z: number): boolean {
+    if (typeof this.m.viroSetNodeScalePivot !== "function") return false;
+    this.m.viroSetNodeScalePivot(node, x, y, z);
+    return true;
+  }
+  /**
+   * Hit tests the node's triangles rather than its bounding box, for its whole
+   * subtree. False on a binary without it.
+   */
+  setNodeHighAccuracyEvents(node: ViroHandle, enabled: boolean): boolean {
+    if (typeof this.m.viroSetNodeHighAccuracyEvents !== "function") return false;
+    this.m.viroSetNodeHighAccuracyEvents(node, enabled);
+    return true;
+  }
   setNodeGeometry(node: ViroHandle, geometry: ViroHandle): void {
     this.m.viroSetNodeGeometry(node, geometry);
   }
