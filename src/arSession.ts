@@ -1566,7 +1566,7 @@ export class ViroArSession {
 
   /**
    * The half-extents of the render frustum at unit depth, as VROARCameraWeb
-   * builds them (VROARWeb.cpp::getProjection).
+   * builds them (VROARWeb.cpp::getView).
    *
    * This has to track that function rather than assume anything, because the
    * two are the same frustum seen from two sides: the renderer projects world
@@ -1591,31 +1591,29 @@ export class ViroArSession {
     const i = this.appliedIntrinsics;
 
     let l: number, r: number, t: number, b: number;
-    if (i && i.width > 0 && i.height > 0) {
-      l = i.intr.cx / i.intr.fx;
-      r = (i.width - i.intr.cx) / i.intr.fx;
-      t = i.intr.cy / i.intr.fy;
-      b = (i.height - i.intr.cy) / i.intr.fy;
-    } else {
+    if (!(i && i.width > 0 && i.height > 0)) {
       // The same fallback the renderer takes when it has no intrinsics.
       t = b = Math.tan((30 * Math.PI) / 180);
       l = r = t * aspect;
+      return { l, r, t, b };
     }
+    l = i.intr.cx / i.intr.fx;
+    r = (i.width - i.intr.cx) / i.intr.fx;
+    t = i.intr.cy / i.intr.fy;
+    b = (i.height - i.intr.cy) / i.intr.fy;
 
-    // The viewport rarely has the image's aspect ratio, so the renderer widens
-    // the axis with room to spare instead of stretching. Off-axis too, which is
-    // why this splits the total in proportion rather than halving it.
-    const imageAspect = (r + l) / (t + b);
-    if (aspect > imageAspect) {
-      const total = (t + b) * aspect;
-      const lr = l + r;
-      l = total * (l / lr);
-      r = total * (r / lr);
+    // The image is cropped to fill the viewport, equal amounts off both ends of
+    // the axis that does not fit (VROARCameraWeb::getView).
+    const w = l + r;
+    const h = t + b;
+    if (aspect > w / h) {
+      const c = (h - w / aspect) / 2;
+      t -= c;
+      b -= c;
     } else {
-      const total = (l + r) / aspect;
-      const tb = t + b;
-      t = total * (t / tb);
-      b = total * (b / tb);
+      const c = (w - h * aspect) / 2;
+      l -= c;
+      r -= c;
     }
     return { l, r, t, b };
   }
