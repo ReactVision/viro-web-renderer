@@ -174,6 +174,11 @@ export interface ArPlaneAnchor {
   height: number;
   alignment: ArPlaneAlignment;
   confidence: number;
+  /**
+   * The plane's boundary, as [x, z] in its local frame around `center`, in metres.
+   * Only a recording or virtual feed supplies it; the live tracker cannot (above).
+   */
+  polygon?: [number, number][];
 }
 
 /** A ray/plane hit, in virocore (Y-up) world space. */
@@ -1426,7 +1431,8 @@ export class ViroArSession {
         Math.abs(p.center[1] - prev.center[1]) > eps ||
         Math.abs(p.center[2] - prev.center[2]) > eps ||
         Math.abs(p.width - prev.width) > eps ||
-        Math.abs(p.height - prev.height) > eps
+        Math.abs(p.height - prev.height) > eps ||
+        (p.polygon?.length ?? 0) !== (prev.polygon?.length ?? 0)
       ) {
         return true;
       }
