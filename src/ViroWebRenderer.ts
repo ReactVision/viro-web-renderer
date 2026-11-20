@@ -113,7 +113,7 @@ export class ViroWebRenderer {
           this.dispatchControllerEvent(action, source, intArg, [x, y, z], posCount ?? 3);
           return;
         }
-        this.dispatchEvent(handle, action, source, intArg, [x, y, z]);
+        this.dispatchEvent(handle, action, source, intArg, [x, y, z], posCount ?? 3);
       },
     );
     // One native callback resolves per-node model-load promises.
@@ -349,13 +349,16 @@ export class ViroWebRenderer {
     source: number,
     intArg: number,
     position: [number, number, number],
+    posCount: number,
   ): void {
     const handlers = this.eventHandlers.get(handle);
     if (!handlers) return;
+    // A tap on the background bubbles to the scene root with no position, as on native.
+    const at = posCount === 0 ? [] : position;
     if (action === ViroEventAction.Click) {
-      handlers.onClick?.(intArg, source, position);
+      handlers.onClick?.(intArg, source, at);
     } else if (action === ViroEventAction.Hover) {
-      handlers.onHover?.(intArg === 1, source, position);
+      handlers.onHover?.(intArg === 1, source, at);
     } else if (action === ViroEventAction.Pinch) {
       handlers.onPinch?.(intArg, position[0], source);
     } else if (action === ViroEventAction.Rotate) {

@@ -310,18 +310,10 @@ export interface ViroAnimationHandlers {
   onFinish?: () => void;
 }
 
-/** Handlers a node registers for its events. position is world-space [x,y,z]. */
+/** Handlers a node registers for its events. position is world-space [x,y,z], or [] for the background. */
 export interface ViroNodeEventHandlers {
-  onClick?: (
-    clickState: ViroClickState,
-    source: number,
-    position: [number, number, number],
-  ) => void;
-  onHover?: (
-    isHovering: boolean,
-    source: number,
-    position: [number, number, number],
-  ) => void;
+  onClick?: (clickState: ViroClickState, source: number, position: number[]) => void;
+  onHover?: (isHovering: boolean, source: number, position: number[]) => void;
   /** scale is cumulative from 1 at the start. */
   onPinch?: (state: ViroGestureState, scale: number, source: number) => void;
   /** Radians, counterclockwise on screen, cumulative from 0 at the start. */
