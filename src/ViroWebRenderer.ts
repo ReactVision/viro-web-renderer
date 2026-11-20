@@ -5,6 +5,7 @@ import {
   ViroModelFormat,
   type ViroHandle,
   type ViroNodeEventHandlers,
+  type ViroControllerEventHandlers,
   type ViroAnimationHandlers,
 } from "./sceneApi.js";
 import { ViroRendererAbortError } from "./types.js";
@@ -79,11 +80,18 @@ export interface ViroContextListener {
   onRestored?: () => void;
 }
 
+// The event callback's node handle for the ViroController delegate; node handles start at 1.
+const CONTROLLER_HANDLE = 0;
+
 export class ViroWebRenderer {
   private disposed = false;
   private detachInput?: () => void;
   private readonly _scene: ViroSceneApi;
   private readonly eventHandlers = new Map<ViroHandle, ViroNodeEventHandlers>();
+  // Last registered wins, as on native where the scene that appears last sets
+  // the delegate. A stack, so a scene that mounts before the previous one
+  // unmounts is not switched off by that unmount.
+  private controllerHandlers: { owner: object; handlers: ViroControllerEventHandlers }[] = [];
   private readonly modelLoadResolvers = new Map<ViroHandle, (success: boolean) => void>();
   private readonly animationHandlers = new Map<ViroHandle, ViroAnimationHandlers>();
   private readonly abortListeners = new Set<(error: ViroRendererAbortError) => void>();
@@ -100,7 +108,11 @@ export class ViroWebRenderer {
     this._scene = new ViroSceneApi(module);
     // One native callback fans events out to per-node handlers.
     module.viroSetEventCallback(
-      (handle, action, source, intArg, x, y, z) => {
+      (handle, action, source, intArg, x, y, z, posCount) => {
+        if (handle === CONTROLLER_HANDLE) {
+          this.dispatchControllerEvent(action, source, intArg, [x, y, z], posCount ?? 3);
+          return;
+        }
         this.dispatchEvent(handle, action, source, intArg, [x, y, z]);
       },
     );
@@ -282,6 +294,53 @@ export class ViroWebRenderer {
   /** Remove a node's event handlers (call on unmount). */
   clearNodeEventHandlers(handle: ViroHandle): void {
     this.eventHandlers.delete(handle);
+  }
+
+  /**
+   * Registers (or replaces) an owner's ViroController handlers. The latest owner
+   * receives the events. Returns false on a binary without the controller delegate.
+   */
+  setControllerEventHandlers(owner: object, handlers: ViroControllerEventHandlers): boolean {
+    if (!this._scene.supportsController) return false;
+    const existing = this.controllerHandlers.find((entry) => entry.owner === owner);
+    if (existing) existing.handlers = handlers;
+    else this.controllerHandlers.push({ owner, handlers });
+    this.applyControllerEvents();
+    return true;
+  }
+
+  clearControllerEventHandlers(owner: object): void {
+    const before = this.controllerHandlers.length;
+    this.controllerHandlers = this.controllerHandlers.filter((entry) => entry.owner !== owner);
+    if (this.controllerHandlers.length !== before) this.applyControllerEvents();
+  }
+
+  private applyControllerEvents(): void {
+    const top = this.controllerHandlers[this.controllerHandlers.length - 1]?.handlers;
+    this._scene.setControllerEventEnabled(ViroEventAction.Click, !!top?.onClick);
+    this._scene.setControllerEventEnabled(ViroEventAction.Pinch, !!top?.onPinch);
+    this._scene.setControllerEventEnabled(ViroEventAction.Rotate, !!top?.onRotate);
+    this._scene.setControllerEventEnabled(ViroEventAction.Fuse, !!top?.onFuse);
+  }
+
+  private dispatchControllerEvent(
+    action: number,
+    source: number,
+    intArg: number,
+    position: [number, number, number],
+    posCount: number,
+  ): void {
+    const handlers = this.controllerHandlers[this.controllerHandlers.length - 1]?.handlers;
+    if (!handlers) return;
+    if (action === ViroEventAction.Click) {
+      handlers.onClick?.(intArg, source, posCount === 0 ? [] : position);
+    } else if (action === ViroEventAction.Pinch) {
+      handlers.onPinch?.(intArg, position[0], source);
+    } else if (action === ViroEventAction.Rotate) {
+      handlers.onRotate?.(intArg, position[0], source);
+    } else if (action === ViroEventAction.Fuse) {
+      handlers.onFuse?.(source);
+    }
   }
 
   private dispatchEvent(
@@ -509,6 +568,7 @@ export class ViroWebRenderer {
     for (const resolve of this.modelLoadResolvers.values()) resolve(false);
     this.modelLoadResolvers.clear();
     this.eventHandlers.clear();
+    this.controllerHandlers = [];
     this.animationHandlers.clear();
     this.disposed = true;
   }

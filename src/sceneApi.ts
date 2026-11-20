@@ -330,6 +330,18 @@ export interface ViroNodeEventHandlers {
   onFuse?: (source: number) => void;
 }
 
+/**
+ * Handlers for the ViroController, which receives every click, pinch, rotate and
+ * fuse, including clicks on the background. position is [] when nothing was hit.
+ */
+export interface ViroControllerEventHandlers {
+  onClick?: (clickState: ViroClickState, source: number, position: number[]) => void;
+  onPinch?: (state: ViroGestureState, scale: number, source: number) => void;
+  /** Radians, counterclockwise on screen, cumulative from 0 at the start. */
+  onRotate?: (state: ViroGestureState, radians: number, source: number) => void;
+  onFuse?: (source: number) => void;
+}
+
 /** A node's last-frame world transform; rotation in degrees. */
 export interface ViroNodeTransform {
   position: [number, number, number];
@@ -481,6 +493,16 @@ export class ViroSceneApi {
   /** False on a binary without pinch, rotate, fuse and the node transform reads. */
   get supportsGestures(): boolean {
     return typeof this.m.viroOnPinch === "function";
+  }
+  /** False on a binary without the ViroController delegate. */
+  get supportsController(): boolean {
+    return typeof this.m.viroSetControllerEventEnabled === "function";
+  }
+  /** Switches one event on the ViroController delegate; false on a binary without it. */
+  setControllerEventEnabled(action: ViroEventAction, enabled: boolean): boolean {
+    if (typeof this.m.viroSetControllerEventEnabled !== "function") return false;
+    this.m.viroSetControllerEventEnabled(action, enabled);
+    return true;
   }
 
   // --- Geometries ---

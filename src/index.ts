@@ -47,6 +47,7 @@ export type {
   ViroTextStyle,
   ViroHandle,
   ViroNodeEventHandlers,
+  ViroControllerEventHandlers,
   ViroNodeTransform,
   ViroBoundingBox,
   ViroAnimationHandlers,

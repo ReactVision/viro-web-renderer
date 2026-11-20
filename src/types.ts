@@ -315,7 +315,8 @@ export interface ViroWebModule {
   ): void;
 
   // Events: register one callback; WASM invokes it as
-  // (nodeHandle, eventAction, source, intArg, x, y, z).
+  // (nodeHandle, eventAction, source, intArg, x, y, z, posCount). nodeHandle 0
+  // is the controller delegate; posCount is absent on older binaries.
   viroSetEventCallback(
     callback: (
       nodeHandle: number,
@@ -325,9 +326,11 @@ export interface ViroWebModule {
       x: number,
       y: number,
       z: number,
+      posCount?: number,
     ) => void,
   ): void;
   viroSetNodeEventEnabled(node: number, eventAction: number, enabled: boolean): void;
+  viroSetControllerEventEnabled?(eventAction: number, enabled: boolean): void;
 
   // Lights. type: 0=Ambient, 1=Directional, 2=Omni, 3=Spot.
   viroCreateLight(type: number): number;
