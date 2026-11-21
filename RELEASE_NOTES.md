@@ -1,5 +1,31 @@
 # Release Notes
 
+## 1.3.0
+
+Bindings for virocore 3.2.3's web build: portal backgrounds and events, per-face materials, full particle settings, physics queries and held forces, post-process effects, node pivots, mouse hover and scene-wide controller events. Web AR crops the camera feed instead of stretching it and runs faster on Android. What viro's web components need for the parity work in `@reactvision/react-viro` 3.2.3.
+
+### Added
+
+- **Portals:** per-portal backgrounds and enter/exit events.
+- **Materials and geometry:** one material per face or submesh, sphere segments and facing, polygon holes and UVs, texture stereo mode.
+- **Particles and physics:** every native emitter setting, held force and torque, ray and shape collision queries, collider debug drawing.
+- **Scene and nodes:** post-process effects, rotation and scale pivots, high-accuracy events, scene-wide `ViroController` handlers, and pause, resume and stop for declarative animations.
+- **AR:** `ArPlaneAnchor.polygon` from recordings and virtual feeds.
+
+### Changed
+
+- **The mouse hovers,** and **a tap on empty space reports `[]`** as its position, as native does.
+
+### Fixed
+
+- **Web AR on Android** reads camera frames through `VideoFrame`: a Pixel 6 Pro goes from 14 to 20–24 fps.
+- **The camera feed is cropped, not stretched,** and hit tests use the same crop.
+- **A .gltf with external files** fails that one model instead of aborting the wasm, and **portals keep drawing** after the camera walks through.
+
+### Check when upgrading
+
+- **Copy the whole `wasm/` folder** again: the binary is new, and older viro releases keep working with it.
+
 ## 1.2.0
 
 Styled text, material effects, pinch, rotate and fuse, node transform and bounding box reads, and recovery from a lost WebGL context: what viro's web components need to match native in `@reactvision/react-viro` 3.2.2.

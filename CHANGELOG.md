@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.0
+
+Needs the virocore web build of 3.2.3; it ships in this package. Each new wrapper checks for its export and answers `false`, `0`, `-1` or `null` on an older binary; nothing existing changes shape.
+
+### Added
+
+- **Animation:** `supportsAnimationPause`, whether pause, resume and stop reach declarative animations.
+- **Portals:** `setNodeBackgroundSphere`, `setNodeBackgroundCube`, `setNodeBackgroundRotation`, `removeNodeBackground` and `setPortalHandler`.
+- **Materials and geometry:** `setGeometryMaterials`, `createGeometrySubmeshes`, `createSphereEx`, `createPolygonEx`, and `setTextureStereoMode`, which takes native's `stereoMode` strings, case-insensitive.
+- **Particles and physics:** `configureParticleEmitter`, `setPhysicsForces`, `findCollisionsWithRay`, `findCollisionsWithShape` and `setPhysicsDebugDraw`.
+- **Scene and nodes:** `setPostProcessEffects`, `setNodeRotationPivot`, `setNodeScalePivot` and `setNodeHighAccuracyEvents`.
+- **ViroController:** `setControllerEventHandlers` registers one owner's scene-wide handlers; the latest owner gets the events.
+- **AR planes:** `ArPlaneAnchor.polygon`, a plane's boundary when a recording or virtual feed supplies one. The live tracker does not.
+
+### Changed
+
+- **A mouse over the canvas moves the hover;** leaving the canvas hands it back to the screen-centre gaze. Touch and pen never hover.
+- **A tap on empty space reports `[]` as its position,** as native does, instead of `[0, 0, 0]`. Binaries without the new position count keep the three numbers.
+
+### Fixed
+
+- **Android AR runs at 20 to 24 fps instead of 14 on a Pixel 6 Pro.** The tracker's copy of each frame went through a `willReadFrequently` canvas, about 35 ms a frame; where `VideoFrame` exists and its luma plane is upright, the session copies that plane instead (under 1 ms). Safari and browsers without `VideoFrame` keep the canvas copy.
+- **AR hit tests use the cropped camera view** that virocore 3.2.3 draws, so taps land where content is.
+
 ## 1.2.0
 
 Needs the virocore web build of 3.2.2 (styled text, material effects, two-finger gestures, node reads); it ships in this package, with the 11 Roboto faces styled text draws in.
