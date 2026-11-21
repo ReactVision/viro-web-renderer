@@ -15,6 +15,11 @@ export enum ViroLightingModel {
 }
 
 /** Texture channel on a material (matches viroSetMaterialTexture in VROSceneWeb.cpp). */
+/** Native's stereoMode prop values. */
+export type ViroStereoMode = "None" | "LeftRight" | "RightLeft" | "TopBottom" | "BottomTop";
+// In VROStereoMode's order, which starts at 1.
+const STEREO_MODES: ViroStereoMode[] = ["None", "LeftRight", "RightLeft", "TopBottom", "BottomTop"];
+
 export enum ViroTextureChannel {
   Diffuse = 0,
   Specular = 1,
@@ -162,6 +167,46 @@ export interface ViroCollision {
   normal: [number, number, number];
 }
 
+/** A burst of particles, as ViroParticleEmitter's `emissionBurst` entries. */
+export interface ViroParticleBurst {
+  /** What `start` and `interval` count: milliseconds, or metres the emitter travelled. */
+  factor: "time" | "distance";
+  start: number;
+  interval: number;
+  min: number;
+  max: number;
+  cycles: number;
+}
+
+/** Live emitter settings; an absent key leaves the emitter as it is. */
+export interface ViroParticleEmitterConfig {
+  delay?: number;
+  duration?: number;
+  loop?: boolean;
+  fixedToEmitter?: boolean;
+  /** A material blend mode name: "Add", "Alpha", "Multiply", "Subtract", "Screen" or "None". */
+  blendMode?: string;
+  /** -1 turns bloom off. */
+  bloomThreshold?: number;
+  emissionRatePerSecond?: [number, number];
+  emissionRatePerMeter?: [number, number];
+  particleLifetime?: [number, number];
+  maxParticles?: number;
+  velocity?: { min: [number, number, number]; max: [number, number, number] };
+  spawnVolume?: { shape: ViroParticleSpawnShape; params: number[]; onSurface: boolean };
+  bursts?: ViroParticleBurst[];
+  /** null clears it. */
+  explosion?: { position: [number, number, number]; impulse: number; deceleration?: number } | null;
+  /** Restart the emission cycle; true also drops the live particles. */
+  reset?: boolean;
+}
+
+/** A force on a physics body, at `position` from its centre. */
+export interface ViroPhysicsForce {
+  value: [number, number, number];
+  position?: [number, number, number];
+}
+
 /** Free axis for a billboard constraint (mirrors VROBillboardAxis). */
 export enum ViroBillboardAxis {
   X = 0,
@@ -265,23 +310,27 @@ export interface ViroAnimationHandlers {
   onFinish?: () => void;
 }
 
-/** Handlers a node registers for its events. position is world-space [x,y,z]. */
+/** Handlers a node registers for its events. position is world-space [x,y,z], or [] for the background. */
 export interface ViroNodeEventHandlers {
-  onClick?: (
-    clickState: ViroClickState,
-    source: number,
-    position: [number, number, number],
-  ) => void;
-  onHover?: (
-    isHovering: boolean,
-    source: number,
-    position: [number, number, number],
-  ) => void;
+  onClick?: (clickState: ViroClickState, source: number, position: number[]) => void;
+  onHover?: (isHovering: boolean, source: number, position: number[]) => void;
   /** scale is cumulative from 1 at the start. */
   onPinch?: (state: ViroGestureState, scale: number, source: number) => void;
   /** Radians, counterclockwise on screen, cumulative from 0 at the start. */
   onRotate?: (state: ViroGestureState, radians: number, source: number) => void;
   /** The gaze (screen centre) stayed on the node for its time to fuse. */
+  onFuse?: (source: number) => void;
+}
+
+/**
+ * Handlers for the ViroController, which receives every click, pinch, rotate and
+ * fuse, including clicks on the background. position is [] when nothing was hit.
+ */
+export interface ViroControllerEventHandlers {
+  onClick?: (clickState: ViroClickState, source: number, position: number[]) => void;
+  onPinch?: (state: ViroGestureState, scale: number, source: number) => void;
+  /** Radians, counterclockwise on screen, cumulative from 0 at the start. */
+  onRotate?: (state: ViroGestureState, radians: number, source: number) => void;
   onFuse?: (source: number) => void;
 }
 
@@ -310,6 +359,8 @@ export interface ViroBoundingBox {
 export class ViroSceneApi {
   constructor(private readonly m: ViroWebModule) {}
 
+  private portalHandlers: Map<ViroHandle, (entered: boolean) => void> | null = null;
+
   // --- Nodes ---
   getRootNode(): ViroHandle {
     return this.m.viroGetRootNode();
@@ -335,6 +386,27 @@ export class ViroSceneApi {
   /** A node that is not selectable is skipped by taps and hit tests, along with its whole subtree. */
   setNodeSelectable(node: ViroHandle, selectable: boolean): void {
     this.m.viroSetNodeSelectable(node, selectable);
+  }
+  /** Node-local point the rotation turns about. False on a binary without pivots. */
+  setNodeRotationPivot(node: ViroHandle, x: number, y: number, z: number): boolean {
+    if (typeof this.m.viroSetNodeRotationPivot !== "function") return false;
+    this.m.viroSetNodeRotationPivot(node, x, y, z);
+    return true;
+  }
+  /** Node-local point the scale grows from. False on a binary without pivots. */
+  setNodeScalePivot(node: ViroHandle, x: number, y: number, z: number): boolean {
+    if (typeof this.m.viroSetNodeScalePivot !== "function") return false;
+    this.m.viroSetNodeScalePivot(node, x, y, z);
+    return true;
+  }
+  /**
+   * Hit tests the node's triangles rather than its bounding box, for its whole
+   * subtree. False on a binary without it.
+   */
+  setNodeHighAccuracyEvents(node: ViroHandle, enabled: boolean): boolean {
+    if (typeof this.m.viroSetNodeHighAccuracyEvents !== "function") return false;
+    this.m.viroSetNodeHighAccuracyEvents(node, enabled);
+    return true;
   }
   setNodeGeometry(node: ViroHandle, geometry: ViroHandle): void {
     this.m.viroSetNodeGeometry(node, geometry);
@@ -414,6 +486,16 @@ export class ViroSceneApi {
   get supportsGestures(): boolean {
     return typeof this.m.viroOnPinch === "function";
   }
+  /** False on a binary without the ViroController delegate. */
+  get supportsController(): boolean {
+    return typeof this.m.viroSetControllerEventEnabled === "function";
+  }
+  /** Switches one event on the ViroController delegate; false on a binary without it. */
+  setControllerEventEnabled(action: ViroEventAction, enabled: boolean): boolean {
+    if (typeof this.m.viroSetControllerEventEnabled !== "function") return false;
+    this.m.viroSetControllerEventEnabled(action, enabled);
+    return true;
+  }
 
   // --- Geometries ---
   createBox(width: number, height: number, length: number): ViroHandle {
@@ -421,6 +503,16 @@ export class ViroSceneApi {
   }
   createSphere(radius: number): ViroHandle {
     return this.m.viroCreateSphere(radius);
+  }
+  /** createSphere with segment counts and facing. 0 when the wasm predates it. */
+  createSphereEx(
+    radius: number,
+    widthSegments: number,
+    heightSegments: number,
+    facesOutward: boolean,
+  ): ViroHandle {
+    if (typeof this.m.viroCreateSphereEx !== "function") return 0;
+    return this.m.viroCreateSphereEx(radius, widthSegments, heightSegments, facesOutward);
   }
   createSurface(width: number, height: number): ViroHandle {
     return this.m.viroCreateSurface(width, height);
@@ -513,6 +605,18 @@ export class ViroSceneApi {
   createPolygon(points: Float32Array | number[]): ViroHandle {
     return this.m.viroCreatePolygon(points);
   }
+  /**
+   * createPolygon with holes (each a flat [x,y,z, …] list) and the UV rectangle
+   * [u0, v0, u1, v1]. 0 when the wasm predates it.
+   */
+  createPolygonEx(
+    points: Float32Array | number[],
+    holes: (Float32Array | number[])[],
+    uv: [number, number, number, number],
+  ): ViroHandle {
+    if (typeof this.m.viroCreatePolygonEx !== "function") return 0;
+    return this.m.viroCreatePolygonEx(points, holes, uv[0], uv[1], uv[2], uv[3]);
+  }
   /** Custom mesh. normals/texcoords may be empty; indices are triangles. */
   createGeometry(
     vertices: Float32Array | number[],
@@ -524,6 +628,31 @@ export class ViroSceneApi {
   }
   setGeometryMaterial(geometry: ViroHandle, material: ViroHandle): void {
     this.m.viroSetGeometryMaterial(geometry, material);
+  }
+  /**
+   * Custom mesh with one element per submesh, each taking the material at its
+   * own index. 0 when the wasm predates submeshes or nothing was built.
+   */
+  createGeometrySubmeshes(
+    vertices: Float32Array | number[],
+    normals: Float32Array | number[],
+    texcoords: Float32Array | number[],
+    submeshes: number[][],
+  ): ViroHandle {
+    if (typeof this.m.viroCreateGeometrySubmeshes !== "function") return 0;
+    return this.m.viroCreateGeometrySubmeshes(
+      vertices,
+      normals,
+      texcoords,
+      submeshes.flat(),
+      submeshes.map((indices) => indices.length),
+    );
+  }
+  /** Every material at once (a box takes one per face). False when unsupported. */
+  setGeometryMaterials(geometry: ViroHandle, materials: ViroHandle[]): boolean {
+    if (typeof this.m.viroSetGeometryMaterials !== "function") return false;
+    this.m.viroSetGeometryMaterials(geometry, materials);
+    return true;
   }
   destroyGeometry(geometry: ViroHandle): void {
     this.m.viroDestroyGeometry(geometry);
@@ -750,6 +879,15 @@ export class ViroSceneApi {
     this.m.viroSetToneMappingEnabled(enabled);
     return true;
   }
+  /**
+   * Full-screen effects (grayscale, sepia, ...), applied in order; an empty list
+   * clears them. They run only while HDR is on, as on native. Returns how many
+   * names the engine knows, or -1 on a binary without effects.
+   */
+  setPostProcessEffects(effects: string[]): number {
+    if (typeof this.m.viroSetPostProcessEffects !== "function") return -1;
+    return this.m.viroSetPostProcessEffects(effects);
+  }
 
   // --- Physics ---
   //
@@ -808,6 +946,51 @@ export class ViroSceneApi {
     if (typeof this.m.viroApplyPhysicsTorque !== "function") return;
     this.m.viroApplyPhysicsTorque(node, torque[0], torque[1], torque[2]);
   }
+  /**
+   * Native's `force` and `torque`: applied on every step until replaced. Send
+   * them again after setPhysicsBody, which starts a body with none. False when
+   * unsupported.
+   */
+  setPhysicsForces(
+    node: ViroHandle,
+    forces: ViroPhysicsForce[],
+    torque: [number, number, number] = [0, 0, 0],
+  ): boolean {
+    if (typeof this.m.viroSetPhysicsForces !== "function") return false;
+    const flat = forces.flatMap((f) => [...f.value, ...(f.position ?? [0, 0, 0])]);
+    this.m.viroSetPhysicsForces(node, flat, torque[0], torque[1], torque[2]);
+    return true;
+  }
+  /**
+   * Whether a ray hits a body. Each body hit reports a collision with `tag` as
+   * its other tag. null when unsupported.
+   */
+  findCollisionsWithRay(
+    from: [number, number, number],
+    to: [number, number, number],
+    closest: boolean,
+    tag: string,
+  ): boolean | null {
+    if (typeof this.m.viroFindCollisionsWithRay !== "function") return null;
+    return this.m.viroFindCollisionsWithRay(...from, ...to, closest, tag);
+  }
+  /** As findCollisionsWithRay, sweeping a shape (`setPhysicsBody`'s types and params). */
+  findCollisionsWithShape(
+    from: [number, number, number],
+    to: [number, number, number],
+    shapeType: ViroPhysicsShapeType,
+    params: number[],
+    tag: string,
+  ): boolean | null {
+    if (typeof this.m.viroFindCollisionsWithShape !== "function") return null;
+    return this.m.viroFindCollisionsWithShape(...from, ...to, shapeType, params, tag);
+  }
+  /** physicsWorld.drawBounds: every body's collider as lines. False when unsupported. */
+  setPhysicsDebugDraw(visible: boolean): boolean {
+    if (typeof this.m.viroSetPhysicsDebugDraw !== "function") return false;
+    this.m.viroSetPhysicsDebugDraw(visible);
+    return true;
+  }
   clearPhysicsBody(node: ViroHandle): void {
     if (typeof this.m.viroClearPhysicsBody !== "function") return;
     this.m.viroClearPhysicsBody(node);
@@ -829,6 +1012,19 @@ export class ViroSceneApi {
     sRGB: boolean,
   ): ViroHandle {
     return this.m.viroCreateTextureRGBA(pixels, width, height, sRGB);
+  }
+  /**
+   * Show one half of a stereo image (the left eye's, as a phone does). Set it
+   * before the texture goes on a material. The mode is matched ignoring case, as
+   * native does. False when the wasm predates it or the mode is not one of them.
+   */
+  setTextureStereoMode(texture: ViroHandle, mode: ViroStereoMode): boolean {
+    if (typeof this.m.viroSetTextureStereoMode !== "function") return false;
+    const wanted = String(mode).toLowerCase();
+    const index = STEREO_MODES.findIndex((m) => m.toLowerCase() === wanted);
+    if (index < 0) return false;
+    this.m.viroSetTextureStereoMode(texture, index + 1);
+    return true;
   }
   setTextureWrap(texture: ViroHandle, wrapS: ViroWrapMode, wrapT: ViroWrapMode): void {
     this.m.viroSetTextureWrap(texture, wrapS, wrapT);
@@ -899,6 +1095,32 @@ export class ViroSceneApi {
   setBackgroundRotation(x: number, y: number, z: number): void {
     this.m.viroSetBackgroundRotation(x, y, z);
   }
+  /**
+   * The background of the portal `node` is in (or is), as a 360 image, 360
+   * video or skybox inside a portal scene sets it natively; the scene's own
+   * outside any. False when the wasm only has the scene-wide setters.
+   */
+  setNodeBackgroundSphere(node: ViroHandle, texture: ViroHandle): boolean {
+    if (typeof this.m.viroSetNodeBackgroundSphere !== "function") return false;
+    this.m.viroSetNodeBackgroundSphere(node, texture);
+    return true;
+  }
+  setNodeBackgroundCube(node: ViroHandle, texture: ViroHandle): boolean {
+    if (typeof this.m.viroSetNodeBackgroundCube !== "function") return false;
+    this.m.viroSetNodeBackgroundCube(node, texture);
+    return true;
+  }
+  setNodeBackgroundRotation(node: ViroHandle, x: number, y: number, z: number): boolean {
+    if (typeof this.m.viroSetNodeBackgroundRotation !== "function") return false;
+    this.m.viroSetNodeBackgroundRotation(node, x, y, z);
+    return true;
+  }
+  /** Clear the background of the portal `node` is in (or is). False when unsupported. */
+  removeNodeBackground(node: ViroHandle): boolean {
+    if (typeof this.m.viroRemoveNodeBackground !== "function") return false;
+    this.m.viroRemoveNodeBackground(node);
+    return true;
+  }
 
   // --- Lighting environment (IBL) ---
   /** Load a radiance .hdr already written to the FS at `path` → texture handle. */
@@ -922,6 +1144,24 @@ export class ViroSceneApi {
   }
   setPortalPassable(portalScene: ViroHandle, passable: boolean): void {
     this.m.viroSetPortalPassable(portalScene, passable);
+  }
+  /**
+   * Called with true when the camera walks into the portal scene and false when
+   * it walks out; null stops. False when the wasm cannot report crossings.
+   */
+  setPortalHandler(portalScene: ViroHandle, handler: ((entered: boolean) => void) | null): boolean {
+    if (typeof this.m.viroSetPortalEventsEnabled !== "function" || typeof this.m.viroSetPortalCallback !== "function") {
+      return false;
+    }
+    if (!this.portalHandlers) {
+      const handlers = new Map<ViroHandle, (entered: boolean) => void>();
+      this.portalHandlers = handlers;
+      this.m.viroSetPortalCallback((portal, entered) => handlers.get(portal)?.(entered));
+    }
+    if (handler) this.portalHandlers.set(portalScene, handler);
+    else this.portalHandlers.delete(portalScene);
+    this.m.viroSetPortalEventsEnabled(portalScene, !!handler);
+    return true;
   }
 
   // --- Particles ---
@@ -1012,6 +1252,40 @@ export class ViroSceneApi {
   }
   setParticleEmitterRun(node: ViroHandle, run: boolean): void {
     this.m.viroSetParticleEmitterRun(node, run);
+  }
+  /** Settings on a live emitter. False when the wasm predates them. */
+  configureParticleEmitter(node: ViroHandle, config: ViroParticleEmitterConfig): boolean {
+    if (typeof this.m.viroConfigureParticleEmitter !== "function") return false;
+    const c: Record<string, unknown> = {};
+    const plain = ["delay", "duration", "loop", "fixedToEmitter", "blendMode", "bloomThreshold", "maxParticles", "reset"] as const;
+    for (const key of plain) {
+      if (config[key] !== undefined) c[key] = config[key];
+    }
+    for (const key of ["emissionRatePerSecond", "emissionRatePerMeter", "particleLifetime"] as const) {
+      const range = config[key];
+      if (range) c[key] = [...range];
+    }
+    if (config.velocity) c.velocity = [...config.velocity.min, ...config.velocity.max];
+    if (config.spawnVolume) {
+      const v = config.spawnVolume;
+      c.spawnVolume = [v.shape, v.onSurface ? 1 : 0, ...v.params];
+    }
+    if (config.bursts) {
+      c.bursts = config.bursts.flatMap((b) => [
+        b.factor === "distance" ? 1 : 0,
+        b.start,
+        b.interval,
+        b.min,
+        b.max,
+        b.cycles,
+      ]);
+    }
+    if (config.explosion !== undefined) {
+      const x = config.explosion;
+      c.explosion = x ? [...x.position, x.impulse, x.deceleration ?? -1] : [0, 0, 0, -1, -1];
+    }
+    this.m.viroConfigureParticleEmitter(node, c);
+    return true;
   }
 
   // --- Lights ---
@@ -1132,6 +1406,14 @@ export class ViroSceneApi {
   }
   stopAnimation(node: ViroHandle, jumpToEnd = false): void {
     this.m.viroStopAnimation(node, jumpToEnd);
+  }
+  /**
+   * True when pauseAnimation, resumeAnimation and stopAnimation also reach the
+   * node's declarative pass (beginAnimation/commitAnimation), not only a model's
+   * own animation. False on a binary built before that.
+   */
+  get supportsAnimationPause(): boolean {
+    return typeof this.m.viroCanPauseDeclarativeAnimations === "function";
   }
 
   // --- Declarative animations (transform/opacity via transaction) ---

@@ -18,27 +18,25 @@ function session(intr, width, height) {
   return s;
 }
 
-/** The frustum half-extents, as getProjection computes them. */
+/** The frustum half-extents, as VROARCameraWeb::getView computes them. */
 function frustum(intr, W, H, vpW, vpH) {
   const aspect = vpH > 0 ? vpW / vpH : 1;
-  let l, r, t, b;
-  if (intr) {
-    l = intr.cx / intr.fx;
-    r = (W - intr.cx) / intr.fx;
-    t = intr.cy / intr.fy;
-    b = (H - intr.cy) / intr.fy;
-  } else {
-    t = b = Math.tan((30 * Math.PI) / 180);
-    l = r = t * aspect;
+  if (!intr) {
+    const t = Math.tan((30 * Math.PI) / 180);
+    return { l: t * aspect, r: t * aspect, t, b: t };
   }
-  const imageAspect = (r + l) / (t + b);
-  if (aspect > imageAspect) {
-    const total = (t + b) * aspect, lr = l + r;
-    l = total * (l / lr); r = total * (r / lr);
+  let l = intr.cx / intr.fx, r = (W - intr.cx) / intr.fx;
+  let t = intr.cy / intr.fy, b = (H - intr.cy) / intr.fy;
+  const w = l + r, h = t + b;
+  if (aspect > w / h) {
+    const c = (h - w / aspect) / 2;
+    t -= c; b -= c;
   } else {
-    const total = (l + r) / aspect, tb = t + b;
-    t = total * (t / tb); b = total * (b / tb);
+    const c = (w - h * aspect) / 2;
+    l -= c; r -= c;
   }
+  // Cropped to fill, never stretched: the frustum has the viewport's shape.
+  assert.ok(Math.abs((l + r) / (t + b) - aspect) < 1e-9, "frustum must have the viewport's aspect");
   return { l, r, t, b };
 }
 
@@ -85,11 +83,15 @@ roundTrip("measured 640x480 default, 4:3 viewport",
 roundTrip("off-centre principal point, 16:9 viewport",
   { fx: 1357.41, fy: 1357.41, cx: 940, cy: 700 }, 1920, 1440, 1600, 900);
 
-// Portrait viewport over a landscape image: exercises the widening branch.
+// Portrait viewport over a landscape image: crops the image's sides.
 roundTrip("portrait viewport, landscape image",
   { fx: 452.5, fy: 452.5, cx: 320, cy: 240 }, 640, 480, 540, 960);
 
 // No intrinsics: both sides fall back to 60 degrees and must still agree.
+// Portrait phone (20:9) over a portrait 3:4 stream, the Pixel 6 Pro case.
+roundTrip("20:9 portrait viewport, 3:4 portrait image",
+  { fx: 452.5, fy: 452.5, cx: 240, cy: 320 }, 480, 640, 412, 915);
+
 roundTrip("no intrinsics, 60-degree fallback", null, 0, 0, 800, 600);
 
 // The bug this replaced: with a real camera, the old fixed-60 ray missed.
