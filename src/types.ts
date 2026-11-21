@@ -21,6 +21,7 @@ export interface ViroWebModule {
   viroStopMainLoop?(): void;
   viroOnPinch?(state: number, scale: number, x: number, y: number): void;
   viroOnRotate?(state: number, radians: number, x: number, y: number): void;
+  viroOnPointerHover?(active: boolean, x: number, y: number): void;
 
   /** Build the hardcoded demo cube scene (smoke test). */
   viroBuildDemoCube(): void;
@@ -34,6 +35,9 @@ export interface ViroWebModule {
   viroSetNodeOpacity(node: number, opacity: number): void;
   viroSetNodeVisible(node: number, visible: boolean): void;
   viroSetNodeSelectable(node: number, selectable: boolean): void;
+  viroSetNodeRotationPivot?(node: number, x: number, y: number, z: number): void;
+  viroSetNodeScalePivot?(node: number, x: number, y: number, z: number): void;
+  viroSetNodeHighAccuracyEvents?(node: number, enabled: boolean): void;
   viroSetNodeGeometry(node: number, geometry: number): void;
   viroAddChildNode(parent: number, child: number): void;
   viroRemoveNodeFromParent(node: number): void;
@@ -50,6 +54,12 @@ export interface ViroWebModule {
 
   viroCreateBox(width: number, height: number, length: number): number;
   viroCreateSphere(radius: number): number;
+  viroCreateSphereEx?(
+    radius: number,
+    widthSegments: number,
+    heightSegments: number,
+    facesOutward: boolean,
+  ): number;
   viroCreateSurface(width: number, height: number): number;
   viroCreateSurfaceUV(
     width: number,
@@ -82,6 +92,14 @@ export interface ViroWebModule {
   // Flat [x,y,z, …] point list.
   viroCreatePolyline(points: Float32Array | number[], thickness: number): number;
   viroCreatePolygon(points: Float32Array | number[]): number;
+  viroCreatePolygonEx?(
+    points: Float32Array | number[],
+    holes: (Float32Array | number[])[],
+    u0: number,
+    v0: number,
+    u1: number,
+    v1: number,
+  ): number;
   // Custom mesh: flat vertex/normal [x,y,z,…], texcoord [u,v,…], triangle indices.
   viroCreateGeometry(
     vertices: Float32Array | number[],
@@ -90,6 +108,14 @@ export interface ViroWebModule {
     indices: Uint32Array | number[],
   ): number;
   viroSetGeometryMaterial(geometry: number, material: number): void;
+  viroSetGeometryMaterials?(geometry: number, materials: number[]): void;
+  viroCreateGeometrySubmeshes?(
+    vertices: Float32Array | number[],
+    normals: Float32Array | number[],
+    texcoords: Float32Array | number[],
+    indices: Uint32Array | number[],
+    counts: number[],
+  ): number;
   viroDestroyGeometry(geometry: number): void;
 
   viroCreateMaterial(): number;
@@ -144,6 +170,8 @@ export interface ViroWebModule {
   viroSetShadowsEnabled(enabled: boolean): boolean;
   // The tone curve on its own, so a caller can drop Hable without dropping PBR.
   viroSetToneMappingEnabled(enabled: boolean): void;
+  // Returns how many of the names the engine knows, or -1 with no scene.
+  viroSetPostProcessEffects?(effects: string[]): number;
   // The virocore commit this binary was built from, dirty flag and date.
   viroGetBuildId(): string;
 
@@ -186,6 +214,18 @@ export interface ViroWebModule {
   viroSetPhysicsVelocity(node: number, x: number, y: number, z: number, isConstant: boolean): void;
   viroApplyPhysicsImpulse(node: number, x: number, y: number, z: number): void;
   viroApplyPhysicsTorque(node: number, x: number, y: number, z: number): void;
+  viroSetPhysicsForces?(node: number, forces: number[], tx: number, ty: number, tz: number): void;
+  viroFindCollisionsWithRay?(
+    fx: number, fy: number, fz: number,
+    tx: number, ty: number, tz: number,
+    closest: boolean, tag: string,
+  ): boolean;
+  viroFindCollisionsWithShape?(
+    fx: number, fy: number, fz: number,
+    tx: number, ty: number, tz: number,
+    shapeType: number, params: number[], tag: string,
+  ): boolean;
+  viroSetPhysicsDebugDraw?(visible: boolean): void;
   viroClearPhysicsBody(node: number): void;
   viroSetCollisionCallback(
     cb: (
@@ -202,6 +242,8 @@ export interface ViroWebModule {
     height: number,
     sRGB: boolean,
   ): number;
+  // mode: 1 None, 2 LeftRight, 3 RightLeft, 4 TopBottom, 5 BottomTop.
+  viroSetTextureStereoMode?(texture: number, mode: number): void;
   viroSetTextureWrap(texture: number, wrapS: number, wrapT: number): void;
   viroSetTextureFilter(texture: number, min: number, mag: number, mip: number): void;
   viroSetMaterialTexture(material: number, channel: number, texture: number): void;
@@ -229,6 +271,10 @@ export interface ViroWebModule {
   viroSetBackgroundSphere(texture: number): void;
   viroSetBackgroundCube(texture: number): void;
   viroSetBackgroundRotation(x: number, y: number, z: number): void;
+  viroSetNodeBackgroundSphere?(node: number, texture: number): void;
+  viroSetNodeBackgroundCube?(node: number, texture: number): void;
+  viroSetNodeBackgroundRotation?(node: number, x: number, y: number, z: number): void;
+  viroRemoveNodeBackground?(node: number): void;
 
   // Particle emitter attached to a node. spawnShape: 0 Box, 1 Sphere, 2 Point.
   // Portals: a portal scene (VROPortal) + entrance frame (VROPortalFrame).
@@ -236,6 +282,8 @@ export interface ViroWebModule {
   viroCreatePortalFrame(): number;
   viroSetPortalEntrance(portalScene: number, frame: number): void;
   viroSetPortalPassable(portalScene: number, passable: boolean): void;
+  viroSetPortalCallback?(cb: (portalScene: number, entered: boolean) => void): void;
+  viroSetPortalEventsEnabled?(portalScene: number, enabled: boolean): void;
 
   viroCreateParticleEmitter(
     node: number,
@@ -259,6 +307,7 @@ export interface ViroWebModule {
     velMaxZ: number,
   ): number;
   viroSetParticleEmitterRun(node: number, run: boolean): void;
+  viroConfigureParticleEmitter?(node: number, config: Record<string, unknown>): void;
   viroSetParticleAcceleration(
     node: number,
     minX: number, minY: number, minZ: number,
@@ -266,7 +315,8 @@ export interface ViroWebModule {
   ): void;
 
   // Events: register one callback; WASM invokes it as
-  // (nodeHandle, eventAction, source, intArg, x, y, z).
+  // (nodeHandle, eventAction, source, intArg, x, y, z, posCount). nodeHandle 0
+  // is the controller delegate; posCount is absent on older binaries.
   viroSetEventCallback(
     callback: (
       nodeHandle: number,
@@ -276,9 +326,11 @@ export interface ViroWebModule {
       x: number,
       y: number,
       z: number,
+      posCount?: number,
     ) => void,
   ): void;
   viroSetNodeEventEnabled(node: number, eventAction: number, enabled: boolean): void;
+  viroSetControllerEventEnabled?(eventAction: number, enabled: boolean): void;
 
   // Lights. type: 0=Ambient, 1=Directional, 2=Omni, 3=Spot.
   viroCreateLight(type: number): number;
@@ -323,6 +375,8 @@ export interface ViroWebModule {
   viroPauseAnimation(nodeHandle: number): void;
   viroResumeAnimation(nodeHandle: number): void;
   viroStopAnimation(nodeHandle: number, jumpToEnd: boolean): void;
+  /** Present on a binary whose pause, resume and stop also reach declarative passes. */
+  viroCanPauseDeclarativeAnimations?(): boolean;
 
   // Declarative animations (transform/opacity via transaction): wrap node
   // property setters between begin/commit. easing: 0=Linear..5=PowerDecel.

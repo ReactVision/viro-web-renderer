@@ -139,6 +139,9 @@ export enum SlamStatus {
   Lost = 3,
 }
 
+// VideoFrame formats whose first plane is 8-bit luma.
+const LUMA_FORMATS = new Set(["I420", "I420A", "I422", "I422A", "I444", "I444A", "NV12"]);
+
 /** Plane classification (SlamPlaneType in tinyvio's platforms/slam/slam_c_api.h). */
 export enum SlamPlaneType {
   HorizontalUpward = 0,
@@ -174,6 +177,11 @@ export interface ArPlaneAnchor {
   height: number;
   alignment: ArPlaneAlignment;
   confidence: number;
+  /**
+   * The plane's boundary, as [x, z] in its local frame around `center`, in metres.
+   * Only a recording or virtual feed supplies it; the live tracker cannot (above).
+   */
+  polygon?: [number, number][];
 }
 
 /** A ray/plane hit, in virocore (Y-up) world space. */
@@ -726,6 +734,11 @@ export class ViroArSession {
   // True when bgTexture is a source texture the GPU fills from the <video>;
   // false when it is re-created from the tracker's RGBA bytes each frame.
   private bgFromSource = false;
+  // Whether camera frames are read as VideoFrame luma; null until the first
+  // frame decides. A frame being read keeps the next one from starting.
+  private lumaFrames: boolean | null = null;
+  private frameBusy = false;
+  private lumaCopy: Uint8Array | null = null;
   private poseFilter: PoseFilter | null = null;
   // Debounced state handed to onStatus; see STATUS_DEBOUNCE_FRAMES.
   private reportedState: ViroTrackingState = ViroTrackingState.Unavailable;
@@ -947,6 +960,8 @@ export class ViroArSession {
     this.planeSnapshot.clear();
     this.lastPlanes = [];
     this.appliedIntrinsics = null;
+    this.lumaFrames = null;
+    this.lumaCopy = null;
   }
 
   private async resolveSlamFactory(): Promise<SlamWasmFactory> {
@@ -1257,11 +1272,37 @@ export class ViroArSession {
 
   private processFrame(): void {
     const { video, canvas, ctx, engine, module } = this;
-    if (!video || !canvas || !ctx || !engine || !module) return;
+    if (!video || !canvas || !ctx || !engine || !module || this.frameBusy) return;
     if (video.readyState < video.HAVE_CURRENT_DATA) return;
 
     const w = canvas.width;
     const h = canvas.height;
+    const ts = performance.now() / 1000;
+
+    // A canvas copy of the camera frame is a GPU readback that cost about 35 ms
+    // a frame on a Pixel 6 Pro (willReadFrequently keeps the canvas on the CPU);
+    // a VideoFrame hands over its luma plane, the grayscale the tracker wants,
+    // in under a millisecond.
+    const frame = this.openLumaFrame(video);
+    if (frame) {
+      this.frameBusy = true;
+      this.readLuma(frame, w, h)
+        .then(
+          (gray) => {
+            if (this.running && this.engine === engine) this.track(gray, w, h, ts, null, frame);
+          },
+          // Only a failed read falls back to the canvas copy; a tracking error surfaces.
+          () => {
+            this.lumaFrames = false;
+          },
+        )
+        .finally(() => {
+          frame.close();
+          this.frameBusy = false;
+        });
+      return;
+    }
+
     ctx.drawImage(video, 0, 0, w, h);
     const rgba = ctx.getImageData(0, 0, w, h).data;
 
@@ -1271,8 +1312,90 @@ export class ViroArSession {
       const ri = i * 4;
       gray[i] = (rgba[ri] * 77 + rgba[ri + 1] * 150 + rgba[ri + 2] * 29) >> 8;
     }
+    this.track(gray, w, h, ts, rgba, video);
+  }
 
-    const ts = performance.now() / 1000;
+  /** The camera frame as a VideoFrame whose first plane is upright 8-bit luma, or null. */
+  private openLumaFrame(video: HTMLVideoElement): VideoFrame | null {
+    if (this.lumaFrames === false || typeof VideoFrame !== "function") return null;
+    // The RGBA background path needs the canvas copy anyway.
+    if (this.opts.showCameraBackground !== false && !this.bgFromSource) return null;
+    let frame: VideoFrame;
+    try {
+      frame = new VideoFrame(video);
+    } catch {
+      return null;
+    }
+    if (this.lumaFrames === null) {
+      const r = frame.visibleRect;
+      const meta = frame as VideoFrame & { rotation?: number; flip?: boolean };
+      this.lumaFrames =
+        !!r &&
+        LUMA_FORMATS.has(frame.format ?? "") &&
+        !meta.rotation &&
+        !meta.flip &&
+        r.width > r.height === video.videoWidth > video.videoHeight;
+      if (!this.lumaFrames) {
+        frame.close();
+        return null;
+      }
+    }
+    return frame;
+  }
+
+  /** The frame's luma plane scaled to w x h; a 2x reduction averages each 2x2 block. */
+  private async readLuma(frame: VideoFrame, w: number, h: number): Promise<Uint8Array> {
+    const size = frame.allocationSize();
+    if (!this.lumaCopy || this.lumaCopy.length < size) this.lumaCopy = new Uint8Array(size);
+    const src = this.lumaCopy;
+    const [{ offset, stride }] = await frame.copyTo(src);
+    const sw = frame.visibleRect!.width;
+    const sh = frame.visibleRect!.height;
+    const gray = new Uint8Array(w * h);
+    if (sw === w * 2 && sh === h * 2) {
+      for (let y = 0; y < h; y++) {
+        const r0 = offset + y * 2 * stride;
+        const r1 = r0 + stride;
+        const o = y * w;
+        for (let x = 0; x < w; x++) {
+          const c = x * 2;
+          gray[o + x] = (src[r0 + c] + src[r0 + c + 1] + src[r1 + c] + src[r1 + c + 1] + 2) >> 2;
+        }
+      }
+      return gray;
+    }
+    const sx = sw / w;
+    const sy = sh / h;
+    for (let y = 0; y < h; y++) {
+      const fy = Math.max(0, (y + 0.5) * sy - 0.5);
+      const y0 = Math.min(sh - 1, Math.floor(fy));
+      const y1 = Math.min(sh - 1, y0 + 1);
+      const wy = fy - y0;
+      const r0 = offset + y0 * stride;
+      const r1 = offset + y1 * stride;
+      for (let x = 0; x < w; x++) {
+        const fx = Math.max(0, (x + 0.5) * sx - 0.5);
+        const x0 = Math.min(sw - 1, Math.floor(fx));
+        const x1 = Math.min(sw - 1, x0 + 1);
+        const wx = fx - x0;
+        const top = src[r0 + x0] + (src[r0 + x1] - src[r0 + x0]) * wx;
+        const bottom = src[r1 + x0] + (src[r1 + x1] - src[r1 + x0]) * wx;
+        gray[y * w + x] = top + (bottom - top) * wy;
+      }
+    }
+    return gray;
+  }
+
+  private track(
+    gray: Uint8Array,
+    w: number,
+    h: number,
+    ts: number,
+    rgba: Uint8ClampedArray | null,
+    source: TexImageSource,
+  ): void {
+    const { engine, module } = this;
+    if (!engine || !module) return;
     const ptr = engine.allocFrameBuffer(gray.length);
     // Re-read HEAPU8: it detaches when WASM memory grows.
     module.HEAPU8.set(gray, ptr);
@@ -1324,8 +1447,9 @@ export class ViroArSession {
 
     if (this.opts.showCameraBackground !== false) {
       if (this.bgFromSource) {
-        this.opts.sceneApi.updateTextureFromSource(this.bgTexture, video);
-      } else {
+        // The frame that was tracked, so the feed and the pose drawn over it agree.
+        this.opts.sceneApi.updateTextureFromSource(this.bgTexture, source);
+      } else if (rgba) {
         this.updateCameraBackground(rgba, w, h);
       }
     }
@@ -1426,7 +1550,8 @@ export class ViroArSession {
         Math.abs(p.center[1] - prev.center[1]) > eps ||
         Math.abs(p.center[2] - prev.center[2]) > eps ||
         Math.abs(p.width - prev.width) > eps ||
-        Math.abs(p.height - prev.height) > eps
+        Math.abs(p.height - prev.height) > eps ||
+        (p.polygon?.length ?? 0) !== (prev.polygon?.length ?? 0)
       ) {
         return true;
       }
@@ -1441,7 +1566,7 @@ export class ViroArSession {
 
   /**
    * The half-extents of the render frustum at unit depth, as VROARCameraWeb
-   * builds them (VROARWeb.cpp::getProjection).
+   * builds them (VROARWeb.cpp::getView).
    *
    * This has to track that function rather than assume anything, because the
    * two are the same frustum seen from two sides: the renderer projects world
@@ -1466,31 +1591,29 @@ export class ViroArSession {
     const i = this.appliedIntrinsics;
 
     let l: number, r: number, t: number, b: number;
-    if (i && i.width > 0 && i.height > 0) {
-      l = i.intr.cx / i.intr.fx;
-      r = (i.width - i.intr.cx) / i.intr.fx;
-      t = i.intr.cy / i.intr.fy;
-      b = (i.height - i.intr.cy) / i.intr.fy;
-    } else {
+    if (!(i && i.width > 0 && i.height > 0)) {
       // The same fallback the renderer takes when it has no intrinsics.
       t = b = Math.tan((30 * Math.PI) / 180);
       l = r = t * aspect;
+      return { l, r, t, b };
     }
+    l = i.intr.cx / i.intr.fx;
+    r = (i.width - i.intr.cx) / i.intr.fx;
+    t = i.intr.cy / i.intr.fy;
+    b = (i.height - i.intr.cy) / i.intr.fy;
 
-    // The viewport rarely has the image's aspect ratio, so the renderer widens
-    // the axis with room to spare instead of stretching. Off-axis too, which is
-    // why this splits the total in proportion rather than halving it.
-    const imageAspect = (r + l) / (t + b);
-    if (aspect > imageAspect) {
-      const total = (t + b) * aspect;
-      const lr = l + r;
-      l = total * (l / lr);
-      r = total * (r / lr);
+    // The image is cropped to fill the viewport, equal amounts off both ends of
+    // the axis that does not fit (VROARCameraWeb::getView).
+    const w = l + r;
+    const h = t + b;
+    if (aspect > w / h) {
+      const c = (h - w / aspect) / 2;
+      t -= c;
+      b -= c;
     } else {
-      const total = (l + r) / aspect;
-      const tb = t + b;
-      t = total * (t / tb);
-      b = total * (b / tb);
+      const c = (w - h * aspect) / 2;
+      l -= c;
+      r -= c;
     }
     return { l, r, t, b };
   }

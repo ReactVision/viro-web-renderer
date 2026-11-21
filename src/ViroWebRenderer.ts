@@ -5,6 +5,7 @@ import {
   ViroModelFormat,
   type ViroHandle,
   type ViroNodeEventHandlers,
+  type ViroControllerEventHandlers,
   type ViroAnimationHandlers,
 } from "./sceneApi.js";
 import { ViroRendererAbortError } from "./types.js";
@@ -79,11 +80,18 @@ export interface ViroContextListener {
   onRestored?: () => void;
 }
 
+// The event callback's node handle for the ViroController delegate; node handles start at 1.
+const CONTROLLER_HANDLE = 0;
+
 export class ViroWebRenderer {
   private disposed = false;
   private detachInput?: () => void;
   private readonly _scene: ViroSceneApi;
   private readonly eventHandlers = new Map<ViroHandle, ViroNodeEventHandlers>();
+  // Last registered wins, as on native where the scene that appears last sets
+  // the delegate. A stack, so a scene that mounts before the previous one
+  // unmounts is not switched off by that unmount.
+  private controllerHandlers: { owner: object; handlers: ViroControllerEventHandlers }[] = [];
   private readonly modelLoadResolvers = new Map<ViroHandle, (success: boolean) => void>();
   private readonly animationHandlers = new Map<ViroHandle, ViroAnimationHandlers>();
   private readonly abortListeners = new Set<(error: ViroRendererAbortError) => void>();
@@ -100,8 +108,12 @@ export class ViroWebRenderer {
     this._scene = new ViroSceneApi(module);
     // One native callback fans events out to per-node handlers.
     module.viroSetEventCallback(
-      (handle, action, source, intArg, x, y, z) => {
-        this.dispatchEvent(handle, action, source, intArg, [x, y, z]);
+      (handle, action, source, intArg, x, y, z, posCount) => {
+        if (handle === CONTROLLER_HANDLE) {
+          this.dispatchControllerEvent(action, source, intArg, [x, y, z], posCount ?? 3);
+          return;
+        }
+        this.dispatchEvent(handle, action, source, intArg, [x, y, z], posCount ?? 3);
       },
     );
     // One native callback resolves per-node model-load promises.
@@ -284,19 +296,69 @@ export class ViroWebRenderer {
     this.eventHandlers.delete(handle);
   }
 
+  /**
+   * Registers (or replaces) an owner's ViroController handlers. The latest owner
+   * receives the events. Returns false on a binary without the controller delegate.
+   */
+  setControllerEventHandlers(owner: object, handlers: ViroControllerEventHandlers): boolean {
+    if (!this._scene.supportsController) return false;
+    const existing = this.controllerHandlers.find((entry) => entry.owner === owner);
+    if (existing) existing.handlers = handlers;
+    else this.controllerHandlers.push({ owner, handlers });
+    this.applyControllerEvents();
+    return true;
+  }
+
+  clearControllerEventHandlers(owner: object): void {
+    const before = this.controllerHandlers.length;
+    this.controllerHandlers = this.controllerHandlers.filter((entry) => entry.owner !== owner);
+    if (this.controllerHandlers.length !== before) this.applyControllerEvents();
+  }
+
+  private applyControllerEvents(): void {
+    const top = this.controllerHandlers[this.controllerHandlers.length - 1]?.handlers;
+    this._scene.setControllerEventEnabled(ViroEventAction.Click, !!top?.onClick);
+    this._scene.setControllerEventEnabled(ViroEventAction.Pinch, !!top?.onPinch);
+    this._scene.setControllerEventEnabled(ViroEventAction.Rotate, !!top?.onRotate);
+    this._scene.setControllerEventEnabled(ViroEventAction.Fuse, !!top?.onFuse);
+  }
+
+  private dispatchControllerEvent(
+    action: number,
+    source: number,
+    intArg: number,
+    position: [number, number, number],
+    posCount: number,
+  ): void {
+    const handlers = this.controllerHandlers[this.controllerHandlers.length - 1]?.handlers;
+    if (!handlers) return;
+    if (action === ViroEventAction.Click) {
+      handlers.onClick?.(intArg, source, posCount === 0 ? [] : position);
+    } else if (action === ViroEventAction.Pinch) {
+      handlers.onPinch?.(intArg, position[0], source);
+    } else if (action === ViroEventAction.Rotate) {
+      handlers.onRotate?.(intArg, position[0], source);
+    } else if (action === ViroEventAction.Fuse) {
+      handlers.onFuse?.(source);
+    }
+  }
+
   private dispatchEvent(
     handle: ViroHandle,
     action: number,
     source: number,
     intArg: number,
     position: [number, number, number],
+    posCount: number,
   ): void {
     const handlers = this.eventHandlers.get(handle);
     if (!handlers) return;
+    // A tap on the background bubbles to the scene root with no position, as on native.
+    const at = posCount === 0 ? [] : position;
     if (action === ViroEventAction.Click) {
-      handlers.onClick?.(intArg, source, position);
+      handlers.onClick?.(intArg, source, at);
     } else if (action === ViroEventAction.Hover) {
-      handlers.onHover?.(intArg === 1, source, position);
+      handlers.onHover?.(intArg === 1, source, at);
     } else if (action === ViroEventAction.Pinch) {
       handlers.onPinch?.(intArg, position[0], source);
     } else if (action === ViroEventAction.Rotate) {
@@ -401,7 +463,20 @@ export class ViroWebRenderer {
       }
       send(0, e);
     };
+    // A mouse moves the hover, as a headset's controller ray does, and leaving
+    // the canvas hands it back to the screen-centre gaze. Touch and pen never
+    // hover, so phones and AR keep the gaze.
+    const hover = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || typeof m.viroOnPointerHover !== "function") return;
+      const p = toCanvas(e.clientX, e.clientY);
+      if (p) m.viroOnPointerHover(true, p[0], p[1]);
+    };
+    const onLeave = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") m.viroOnPointerHover?.(false, 0, 0);
+    };
+
     const onMove = (e: PointerEvent) => {
+      hover(e);
       if (fingers.has(e.pointerId)) {
         fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (held) {
@@ -448,12 +523,14 @@ export class ViroWebRenderer {
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
     canvas.addEventListener("pointercancel", onCancel);
+    canvas.addEventListener("pointerleave", onLeave);
 
     this.detachInput = () => {
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("pointercancel", onCancel);
+      canvas.removeEventListener("pointerleave", onLeave);
     };
   }
 
@@ -494,6 +571,7 @@ export class ViroWebRenderer {
     for (const resolve of this.modelLoadResolvers.values()) resolve(false);
     this.modelLoadResolvers.clear();
     this.eventHandlers.clear();
+    this.controllerHandlers = [];
     this.animationHandlers.clear();
     this.disposed = true;
   }
