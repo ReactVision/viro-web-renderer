@@ -362,6 +362,7 @@ export interface ViroWebModule {
    */
   viroSetCameraProjection?(node: number, projection: number): void;
   viroSetCameraOrthographicScale?(node: number, scale: number): void;
+  viroSetCameraFieldOfView?(node: number, degrees: number): void;
 
   // Model loading. The bridge writes the file to FS then calls viroLoadModel.
   // format: 0=GLB, 1=glTF, 2=VRX. Callback: (nodeHandle, success).

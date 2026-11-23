@@ -1390,6 +1390,14 @@ export class ViroSceneApi {
     this.m.viroSetCameraOrthographicScale(node, scale);
     return true;
   }
+  /** Degrees across the viewport's longer side, as ViroCamera's fieldOfView; 0 is the renderer's default. False on an older wasm. */
+  setCameraFieldOfView(node: ViroHandle, degrees: number): boolean {
+    if (typeof this.m.viroSetCameraFieldOfView !== "function") {
+      return false;
+    }
+    this.m.viroSetCameraFieldOfView(node, degrees);
+    return true;
+  }
 
   // --- Model animations ---
   getAnimationKeys(node: ViroHandle): string[] {
