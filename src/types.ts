@@ -120,6 +120,8 @@ export interface ViroWebModule {
 
   viroCreateMaterial(): number;
   viroSetMaterialDiffuseColor(material: number, r: number, g: number, b: number, a: number): void;
+  /** Its presence also means viroSetMaterialTexture takes channels 6 (emission) and 7 (reflective). */
+  viroSetMaterialEmissionColor?(material: number, r: number, g: number, b: number): void;
   viroSetMaterialLightingModel(material: number, model: number): void;
   viroDestroyMaterial(material: number): void;
   viroSetMaterialShininess(material: number, shininess: number): void;
