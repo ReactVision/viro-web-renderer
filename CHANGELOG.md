@@ -7,7 +7,7 @@ Needs the virocore web build from `fix/web-ar-tracker` (point cloud) and the tin
 ### Added
 
 - **AR point cloud:** the `pointCloud` and `maxPoints` options, `onPointCloudUpdated`, `setPointCloudEnabled` and `getPointCloud` read the tracker's feature points with stable ids, in metres. `arSetPointCloud` hands them to the renderer and `arDisplayPointCloud` draws them as particles, as `displayPointCloud` does natively.
-- **AR hit tests return feature points:** with the point cloud on, the point nearest the ray (within about a degree) comes back as a `type: "featurePoint"` result beside the plane hits, which now carry `type: "plane"`.
+- **AR hit tests return feature points:** with the point cloud on, the point nearest the ray (within about a degree) comes back as a `kind: "featurePoint"` result beside the plane hits, which now carry `kind: "plane"`.
 - **AR planes from the live tracker carry `polygon`,** the boundary tinyvio detects, in the plane's local frame.
 
 ### Changed

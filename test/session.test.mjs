@@ -314,7 +314,7 @@ ok("the point cloud reaches the renderer, the callback and hit tests", () => {
   s.lastCamQuat = [0, 0, 0, 1];
   const hits = s.hitTest(50, 50, 100, 100);
   assert.equal(hits.length, 1);
-  assert.equal(hits[0].type, "featurePoint");
+  assert.equal(hits[0].kind, "featurePoint");
   assert.deepEqual(hits[0].position.map((v) => +v.toFixed(6)), [0, 0, -2]);
   assert.ok(Math.abs(hits[0].distance - 2) < 1e-6);
   s.setPointCloudEnabled(false);

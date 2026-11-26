@@ -213,7 +213,7 @@ export interface ArHitResult {
   normal: [number, number, number];
   distance: number;
   /** What was hit. Absent on results from older builds, which only hit planes. */
-  type?: "plane" | "featurePoint";
+  kind?: "plane" | "featurePoint";
 }
 
 /**
@@ -1784,7 +1784,7 @@ export class ViroArSession {
       const t = dot([p.center[0] - origin[0], p.center[1] - origin[1], p.center[2] - origin[2]], p.normal) / denom;
       if (t <= 0) continue;
       const hit: Vec3 = [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
-      hits.push({ anchorId: p.id, position: hit, normal: p.normal, distance: t, type: "plane" });
+      hits.push({ anchorId: p.id, position: hit, normal: p.normal, distance: t, kind: "plane" });
     }
     // The feature point nearest the ray, as ARKit's featurePoint result: what a
     // tap can land on before any surface is detected, and on things that are
@@ -1811,7 +1811,7 @@ export class ViroArSession {
         position: [pts[3 * best], pts[3 * best + 1], pts[3 * best + 2]],
         normal: [-dir[0], -dir[1], -dir[2]],
         distance: bestT,
-        type: "featurePoint",
+        kind: "featurePoint",
       });
     }
     return hits.sort((a, b) => a.distance - b.distance);
