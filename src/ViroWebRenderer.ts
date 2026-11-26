@@ -8,8 +8,13 @@ import {
   type ViroControllerEventHandlers,
   type ViroAnimationHandlers,
 } from "./sceneApi.js";
-import { ViroRendererAbortError } from "./types.js";
-import type { LocateFile, ViroWebModule, ViroWebRendererOptions } from "./types.js";
+import { ViroRendererAbortError, ViroWebGLUnavailableError } from "./types.js";
+import type {
+  LocateFile,
+  ViroWebGLUnavailableReason,
+  ViroWebModule,
+  ViroWebRendererOptions,
+} from "./types.js";
 
 const MODEL_EXT: Record<ViroModelFormat, string> = {
   [ViroModelFormat.GLB]: "glb",
@@ -48,6 +53,16 @@ function ensureSelector(canvas: HTMLCanvasElement): string {
     canvas.id = `viro-web-canvas-${selectorCounter++}`;
   }
   return `#${CSS.escape(canvas.id)}`;
+}
+
+// On a throwaway canvas: probing the target would fix its context attributes
+// before virocore asks for its own.
+function probeWebGL2(): ViroWebGLUnavailableReason | null {
+  const gl = document.createElement("canvas").getContext("webgl2");
+  if (!gl) return "unsupported";
+  const lost = gl.isContextLost();
+  gl.getExtension("WEBGL_lose_context")?.loseContext();
+  return lost ? "context-lost" : null;
 }
 
 function computeSize(
@@ -370,6 +385,10 @@ export class ViroWebRenderer {
 
   static async create(options: ViroWebRendererOptions): Promise<ViroWebRenderer> {
     const canvas = resolveCanvas(options.canvas);
+    // Without a context virocore's scene constructor aborts, which reaches the
+    // caller as a bare RuntimeError "unreachable" with the reason only in the log.
+    const unavailable = probeWebGL2();
+    if (unavailable) throw new ViroWebGLUnavailableError(unavailable);
     const selector = ensureSelector(canvas);
     const { width, height } = computeSize(canvas, options.width, options.height);
 
@@ -388,6 +407,13 @@ export class ViroWebRenderer {
     module.initViroScene(selector, width, height);
 
     renderer = new ViroWebRenderer(module, canvas);
+    // A canvas whose context was lost before this call fired webglcontextlost
+    // with no listener to preventDefault it, so the browser never restores it.
+    // virocore sets up on it without error and draws nothing.
+    if (canvas.getContext("webgl2")?.isContextLost()) {
+      renderer.dispose();
+      throw new ViroWebGLUnavailableError("context-lost");
+    }
     if (options.onAbort) renderer.addAbortListener(options.onAbort);
     // Once, at startup: what a bug report needs pasted back and cannot find
     // anywhere else, since the binary reaches an app through two hand copies.

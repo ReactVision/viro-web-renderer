@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>viro-web-renderer startup checks</title>
+<style>#c{width:256px;height:256px;display:block}</style></head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// ?mode=no-webgl2: the browser gives no WebGL2 context.
+// ?mode=lost: the canvas's context is lost before create().
+const mode = new URL(location.href).searchParams.get("mode");
+const canvas = document.getElementById("c");
+if (mode === "no-webgl2") {
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+    return type === "webgl2" ? null : getContext.call(this, type, ...rest);
+  };
+}
+if (mode === "lost") {
+  canvas.getContext("webgl2").getExtension("WEBGL_lose_context").loseContext();
+  await new Promise((r) => setTimeout(r, 50));
+}
+const { ViroWebRenderer } = await import("/dist/index.js");
+try {
+  const renderer = await ViroWebRenderer.create({ canvas, width: 256, height: 256, assetBaseUrl: "/wasm/" });
+  window.viroStartup = { created: true, isContextLost: renderer.isContextLost };
+} catch (e) {
+  window.viroStartup = { created: false, name: e?.name, reason: e?.reason ?? null, message: String(e?.message ?? e) };
+}
+</script>
+</body>
+</html>

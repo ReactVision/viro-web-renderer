@@ -493,3 +493,24 @@ export class ViroRendererAbortError extends Error {
     this.reason = reason;
   }
 }
+
+/**
+ * `"unsupported"`: the browser gives no WebGL2 context at all (WebGL2 off,
+ * blocklisted GPU, or too old a browser). `"context-lost"`: it gives one that is
+ * already lost, which a GPU reset or a browser reclaiming memory leaves behind.
+ */
+export type ViroWebGLUnavailableReason = "unsupported" | "context-lost";
+
+/** What `create()` rejects with when it cannot get a usable WebGL2 context. */
+export class ViroWebGLUnavailableError extends Error {
+  readonly reason: ViroWebGLUnavailableReason;
+  constructor(reason: ViroWebGLUnavailableReason) {
+    super(
+      reason === "unsupported"
+        ? "Viro web renderer: this browser cannot create a WebGL2 context"
+        : "Viro web renderer: the WebGL2 context was lost before the renderer started",
+    );
+    this.name = "ViroWebGLUnavailableError";
+    this.reason = reason;
+  }
+}
