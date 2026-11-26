@@ -55,14 +55,16 @@ function ensureSelector(canvas: HTMLCanvasElement): string {
   return `#${CSS.escape(canvas.id)}`;
 }
 
-// On a throwaway canvas: probing the target would fix its context attributes
-// before virocore asks for its own.
-function probeWebGL2(): ViroWebGLUnavailableReason | null {
-  const gl = document.createElement("canvas").getContext("webgl2");
+// Why virocore could not set up on `canvas`, read after it tried, or null when
+// the context is fine. Read from the canvas itself rather than a probe canvas:
+// a probe is one more WebGL context, and near the browser's limit (16 in
+// Chrome) creating it makes the browser drop the oldest, which can be another
+// renderer's on the same page. After virocore's attempt, getContext only
+// returns the context it made, or null when the browser gave it none.
+function contextProblem(canvas: HTMLCanvasElement): ViroWebGLUnavailableReason | null {
+  const gl = canvas.getContext("webgl2");
   if (!gl) return "unsupported";
-  const lost = gl.isContextLost();
-  gl.getExtension("WEBGL_lose_context")?.loseContext();
-  return lost ? "context-lost" : null;
+  return gl.isContextLost() ? "context-lost" : null;
 }
 
 function computeSize(
@@ -385,10 +387,8 @@ export class ViroWebRenderer {
 
   static async create(options: ViroWebRendererOptions): Promise<ViroWebRenderer> {
     const canvas = resolveCanvas(options.canvas);
-    // Without a context virocore's scene constructor aborts, which reaches the
-    // caller as a bare RuntimeError "unreachable" with the reason only in the log.
-    const unavailable = probeWebGL2();
-    if (unavailable) throw new ViroWebGLUnavailableError(unavailable);
+    // A browser with no WebGL2 at all, before the module is downloaded.
+    if (typeof WebGL2RenderingContext === "undefined") throw new ViroWebGLUnavailableError("unsupported");
     const selector = ensureSelector(canvas);
     const { width, height } = computeSize(canvas, options.width, options.height);
 
@@ -404,13 +404,20 @@ export class ViroWebRenderer {
       importGlue: options.importGlue,
       onAbort: (what) => renderer?.handleAbort(what),
     });
-    module.initViroScene(selector, width, height);
+    // Without a context virocore's scene constructor aborts, which reached the
+    // caller as a bare RuntimeError "unreachable" with the reason only in the log.
+    try {
+      module.initViroScene(selector, width, height);
+    } catch (err) {
+      const problem = contextProblem(canvas);
+      throw problem ? new ViroWebGLUnavailableError(problem) : err;
+    }
 
     renderer = new ViroWebRenderer(module, canvas);
     // A canvas whose context was lost before this call fired webglcontextlost
     // with no listener to preventDefault it, so the browser never restores it.
     // virocore sets up on it without error and draws nothing.
-    if (canvas.getContext("webgl2")?.isContextLost()) {
+    if (contextProblem(canvas) === "context-lost") {
       renderer.dispose();
       throw new ViroWebGLUnavailableError("context-lost");
     }
