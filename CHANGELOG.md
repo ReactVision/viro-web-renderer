@@ -16,6 +16,7 @@ Needs the virocore web build from `fix/web-ar-tracker` (point cloud) and the tin
 
 ### Fixed
 
+- **`create()` says when WebGL2 is unavailable.** It rejects with a `ViroWebGLUnavailableError` whose `reason` is `"unsupported"` when the browser gives no WebGL2 context, where it used to reject with a bare `RuntimeError: unreachable` from inside virocore. It also rejects with `"context-lost"` for a canvas whose context was lost before the call, where it used to resolve a renderer that never drew and reported `isContextLost` as `false`.
 - **Surfaces appear in metres.** The engine no longer reports surfaces or points before its scale is metric; the first surfaces on an iPhone used to be tens of metres across and tens of metres away.
 - **Surfaces keep their ids through a tracking loss,** and a box placed after a loss no longer lands metres off: the engine resets its scale with the map and puts the rebuilt map where the old one was.
 

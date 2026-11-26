@@ -2,8 +2,8 @@
 //
 // What the Node tests cannot see, because each of these was a defect only a
 // running renderer showed: a tap mirrored about the horizontal axis, a heap that
-// could not grow past 256 MB, a runtime abort nobody was told about, and the
-// camera feed's texture path.
+// could not grow past 256 MB, a runtime abort nobody was told about, the
+// camera feed's texture path, and a missing or lost WebGL2 context at startup.
 //
 //   npm run build && node test/browser/run.mjs
 //
@@ -180,6 +180,19 @@ try {
     check(!near(limited, tracked) && !near(limited, atZero), "Limited applies the new rotation",
       `x ${limited.toFixed(3)}`);
     await ar.close();
+  }
+
+  // 6. create() names a missing or already-lost WebGL2 context. It used to
+  //    reject with a bare "RuntimeError: unreachable" for the first, and to
+  //    resolve a renderer that never draws for the second.
+  for (const [mode, reason] of [["no-webgl2", "unsupported"], ["lost", "context-lost"]]) {
+    const p = await browser.newPage();
+    await p.goto(`${base}test/browser/startup.html?mode=${mode}`);
+    await p.waitForFunction(() => window.viroStartup, null, { timeout: 30000 });
+    const out = await p.evaluate(() => window.viroStartup);
+    check(!out.created && out.name === "ViroWebGLUnavailableError" && out.reason === reason,
+      `create() rejects with ViroWebGLUnavailableError "${reason}"`, JSON.stringify(out));
+    await p.close();
   }
 
   if (failed) console.log(logs.slice(-20).join("\n"));
