@@ -416,6 +416,15 @@ export interface ViroWebModule {
     fx: number, fy: number, cx: number, cy: number,
     width: number, height: number,
   ): void;
+  // The tracker's feature points (Y-up world, flat x,y,z) and their ids, carried
+  // on every AR frame until replaced. Optional: older builds have no point cloud.
+  viroARSetPointCloud?(xyz: number[], ids: number[]): void;
+  // displayPointCloud: draw the points as particles. textureHandle < 0 keeps the
+  // default dot; sx/sy/sz is each particle's world size.
+  viroARDisplayPointCloud?(
+    display: boolean, textureHandle: number,
+    sx: number, sy: number, sz: number, maxPoints: number,
+  ): void;
 
   // Emscripten virtual filesystem (exported via EXPORTED_RUNTIME_METHODS=[...,FS]).
   FS: {

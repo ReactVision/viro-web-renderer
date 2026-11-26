@@ -230,4 +230,95 @@ ok("rotationRate is read per engine: WebKit in sensor order, others per spec", (
   assert.deepEqual(deviceGyro({ alpha: null, beta: null, gamma: null }, true), [0, 0, 0]);
 });
 
+ok("a tracked frame with a reason is Limited, as ARKit reports it", () => {
+  const { s, calls, step } = fakeSession({ poseSmoothing: false });
+  let reason = 0;
+  s.engine.trackingReason = () => reason;
+  step(SlamStatus.Running, PoseConfidence.Full);
+  reason = 5; // excessive motion, pose still solved
+  for (let i = 0; i < 20; i++) step(SlamStatus.Running, PoseConfidence.Full);
+  assert.equal(calls.statuses.at(-1).state, ViroTrackingState.Limited);
+  assert.equal(calls.statuses.at(-1).detail.reason, 5);
+  // The renderer still draws the pose.
+  assert.equal(calls.poses.at(-1).state, ViroTrackingState.Normal);
+  reason = 2; // insufficient parallax is not one of ARKit's limited reasons
+  step(SlamStatus.Running, PoseConfidence.Full);
+  assert.equal(calls.statuses.at(-1).state, ViroTrackingState.Normal);
+});
+
+/** A fake heap holding plane boundaries and map points, as tinyvio lays them out. */
+function withGeometry(session, { boundary, points, ids }) {
+  const heap = new ArrayBuffer(4096);
+  const f32 = new Float32Array(heap);
+  const u32 = new Uint32Array(heap);
+  // The frame's pixels go to address 0 (allocFrameBuffer), so start past them.
+  f32.set(boundary.flat(), 64); // floats 64..
+  f32.set(points.flat(), 256); // floats 256..
+  u32.set(ids, 768); // uint32 768..
+  session.module = { HEAPU8: new Uint8Array(heap), HEAPF32: f32, HEAPU32: u32 };
+  Object.assign(session.engine, {
+    fetchPlanes: () => 1,
+    planeId: () => 4,
+    planeCenterX: () => 1, planeCenterY: () => 2, planeCenterZ: () => -1.5, // Z-up: 1.5 m below
+    planeNormalX: () => 0, planeNormalY: () => 0, planeNormalZ: () => 1,
+    planeExtentX: () => 2, planeExtentZ: () => 1,
+    planeType: () => 1, planeConfidence: () => 1,
+    fetchPlaneBoundary: () => boundary.length,
+    boundaryPtr: () => 64 * 4,
+    fetchPoints: () => points.length,
+    pointsPtr: () => 256 * 4,
+    pointIdsPtr: () => 768 * 4,
+  });
+}
+
+ok("live planes carry their boundary polygon in the plane's own frame", () => {
+  let anchors = [];
+  const { s, step } = fakeSession({ poseSmoothing: false, detectPlanes: true, onAnchorsUpdated: (a) => (anchors = a) });
+  // A 2 x 1 rectangle around the centre, in the tracker's Z-up world.
+  withGeometry(s, {
+    boundary: [[0, 1.5, -1.5], [2, 1.5, -1.5], [2, 2.5, -1.5], [0, 2.5, -1.5]],
+    points: [], ids: [],
+  });
+  step(SlamStatus.Running, PoseConfidence.Full);
+  assert.equal(anchors.length, 1);
+  const p = anchors[0];
+  assert.deepEqual(p.center.map((v) => +v.toFixed(6)), [1, -1.5, -2]);
+  // Y-up: x stays, the tracker's y becomes -z. Around the centre: x in [-1, 1], z in [-0.5, 0.5].
+  const xs = p.polygon.map(([x]) => +x.toFixed(6)).sort((a, b) => a - b);
+  const zs = p.polygon.map(([, z]) => +z.toFixed(6)).sort((a, b) => a - b);
+  assert.deepEqual(xs, [-1, -1, 1, 1]);
+  assert.deepEqual(zs, [-0.5, -0.5, 0.5, 0.5]);
+});
+
+ok("the point cloud reaches the renderer, the callback and hit tests", () => {
+  const sent = [];
+  let cloud = null;
+  const { s, step } = fakeSession({
+    poseSmoothing: false,
+    pointCloud: true,
+    onPointCloudUpdated: (c) => (cloud = c),
+  });
+  s.opts.sceneApi = new Proxy(s.opts.sceneApi, {
+    get: (t, k) => (k === "arSetPointCloud" ? (xyz, ids) => sent.push([Array.from(xyz), Array.from(ids)]) : t[k]),
+  });
+  // One point 2 m straight ahead of an identity camera (Y-up: -Z), one off to the side.
+  withGeometry(s, { boundary: [], points: [[0, 2, 0], [1, 2, 0]], ids: [11, 12] });
+  s.engine.fetchPlanes = () => 0;
+  step(SlamStatus.Running, PoseConfidence.Full);
+  assert.deepEqual(cloud.identifiers, [11, 12]);
+  assert.deepEqual(cloud.points[0].map((v) => +v.toFixed(6)), [0, 0, -2]);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0][1], [11, 12]);
+  // A renderer camera at the origin looking down -Z, as hitTest unprojects through.
+  s.lastCamPos = [0, 0, 0];
+  s.lastCamQuat = [0, 0, 0, 1];
+  const hits = s.hitTest(50, 50, 100, 100);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].type, "featurePoint");
+  assert.deepEqual(hits[0].position.map((v) => +v.toFixed(6)), [0, 0, -2]);
+  assert.ok(Math.abs(hits[0].distance - 2) < 1e-6);
+  s.setPointCloudEnabled(false);
+  assert.equal(s.hitTest(50, 50, 100, 100).length, 0);
+});
+
 console.log(`session: all ${passed} checks passed`);

@@ -75,6 +75,7 @@ export type {
   ArPlaybackFrame,
   ArPlaneAlignment,
   ArHitResult,
+  ArPointCloud,
 } from "./arSession.js";
 export { ViroRendererAbortError } from "./types.js";
 export type {
