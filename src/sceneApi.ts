@@ -1449,6 +1449,31 @@ export class ViroSceneApi {
   arSetCameraBackground(texture: ViroHandle): void {
     this.m.viroARSetCameraBackground(texture);
   }
+  /**
+   * The tracker's feature points, Y-up world space, as flat x,y,z, with their
+   * ids. Every AR frame carries them until the next call, which is what the
+   * point cloud display reads. False against a virocore build without the binding.
+   */
+  arSetPointCloud(xyz: ArrayLike<number>, ids: ArrayLike<number>): boolean {
+    if (typeof this.m.viroARSetPointCloud !== "function") return false;
+    this.m.viroARSetPointCloud(Array.from(xyz), Array.from(ids));
+    return true;
+  }
+  /**
+   * Draw the point cloud as particles, as ViroARScene's displayPointCloud does on
+   * iOS and Android. `texture` null keeps the default dot; `scale` is each
+   * particle's world size (native's default is 0.01 x 0.01). False against a
+   * virocore build without the binding.
+   */
+  arDisplayPointCloud(
+    display: boolean,
+    options: { texture?: ViroHandle | null; scale?: [number, number, number]; maxPoints?: number } = {},
+  ): boolean {
+    if (typeof this.m.viroARDisplayPointCloud !== "function") return false;
+    const [sx, sy, sz] = options.scale ?? [0.01, 0.01, 1];
+    this.m.viroARDisplayPointCloud(display, options.texture ?? -1, sx, sy, sz, options.maxPoints ?? 500);
+    return true;
+  }
   arSetCameraImageSize(width: number, height: number): void {
     this.m.viroARSetCameraImageSize(width, height);
   }

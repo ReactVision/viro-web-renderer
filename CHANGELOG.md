@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+Needs the virocore web build from `fix/web-ar-tracker` (point cloud) and the tinyvio engine from the same branch (boundaries, points, surfaces through a loss); both ship in this package. Against older binaries the new calls answer `false` or nothing, and nothing existing changes shape.
+
+### Added
+
+- **AR point cloud:** the `pointCloud` and `maxPoints` options, `onPointCloudUpdated`, `setPointCloudEnabled` and `getPointCloud` read the tracker's feature points with stable ids, in metres. `arSetPointCloud` hands them to the renderer and `arDisplayPointCloud` draws them as particles, as `displayPointCloud` does natively.
+- **AR hit tests return feature points:** with the point cloud on, the point nearest the ray (within about a degree) comes back as a `kind: "featurePoint"` result beside the plane hits, which now carry `kind: "plane"`.
+- **AR planes from the live tracker carry `polygon`,** the boundary tinyvio detects, in the plane's local frame.
+
+### Changed
+
+- **A tracked frame with a reason is `Limited`,** as ARKit reports it: excessive motion, too few features or too little light while the pose still comes. The renderer still draws the pose; only the reported state changes, so the reason reaches the app.
+
+### Fixed
+
+- **Surfaces appear in metres.** The engine no longer reports surfaces or points before its scale is metric; the first surfaces on an iPhone used to be tens of metres across and tens of metres away.
+- **Surfaces keep their ids through a tracking loss,** and a box placed after a loss no longer lands metres off: the engine resets its scale with the map and puts the rebuilt map where the old one was.
+
 ## 1.3.0
 
 Needs the virocore web build of 3.2.3; it ships in this package. Each new wrapper checks for its export and answers `false`, `0`, `-1` or `null` on an older binary; nothing existing changes shape.
