@@ -88,6 +88,21 @@ export interface SlamEngine {
   planeExtentZ(i: number): number;
   planeType(i: number): number;
   planeConfidence(i: number): number;
+  /**
+   * Plane i's boundary polygon from the last fetchPlanes, copied to the heap as
+   * x,y,z world points (Z-up) at boundaryPtr(). Returns the vertex count.
+   * Optional, as everything newer than the original engine is.
+   */
+  fetchPlaneBoundary?(i: number): number;
+  boundaryPtr?(): number;
+  /**
+   * The map's points with stable ids, in metres (Z-up), copied to the heap:
+   * x,y,z floats at pointsPtr(), uint32 ids at pointIdsPtr(). Returns the count;
+   * none until the tracker's scale is metric.
+   */
+  fetchPoints?(maxPoints: number): number;
+  pointsPtr?(): number;
+  pointIdsPtr?(): number;
   delete(): void;
 }
 
@@ -104,6 +119,9 @@ export interface SlamWasmModule {
   SlamEngine: new () => SlamEngine;
   /** Live view of WASM heap; re-read each frame (it detaches on memory growth). */
   HEAPU8: Uint8Array;
+  /** Float and uint32 views of the same heap, where the build exports them. */
+  HEAPF32?: Float32Array;
+  HEAPU32?: Uint32Array;
   [key: string]: unknown;
 }
 
@@ -162,11 +180,11 @@ export type ArPlaneAlignment =
  * placed in the local XZ plane lie on the surface. width/height are the extents
  * along the plane's local X/Z.
  *
- * That rectangle is an approximation of what tinyvio actually found. It detects
- * a boundary polygon and the C API this comes through has only a centre and two
- * extents, so the polygon is reduced to its bounding box on the way here. The
+ * That rectangle is the bounds of what tinyvio actually found, a boundary
+ * polygon, which comes with it in `polygon` wherever the engine exposes it. The
  * box is never smaller than the surface and on a room-sized floor it can be
- * noticeably larger — fine for placing an object on, misleading if you draw it.
+ * noticeably larger — fine for placing an object on, misleading if you draw it;
+ * draw the polygon.
  */
 export interface ArPlaneAnchor {
   id: string;
@@ -179,17 +197,33 @@ export interface ArPlaneAnchor {
   confidence: number;
   /**
    * The plane's boundary, as [x, z] in its local frame around `center`, in metres.
-   * Only a recording or virtual feed supplies it; the live tracker cannot (above).
+   * The live tracker supplies it (tinyvio with fetchPlaneBoundary), and so do a
+   * recording and a virtual feed.
    */
   polygon?: [number, number][];
 }
 
-/** A ray/plane hit, in virocore (Y-up) world space. */
+/**
+ * A ray hit, in virocore (Y-up) world space: on a detected plane, or on one of
+ * the tracker's feature points (`anchorId` empty, `normal` toward the camera).
+ */
 export interface ArHitResult {
   anchorId: string;
   position: [number, number, number];
   normal: [number, number, number];
   distance: number;
+  /** What was hit. Absent on results from older builds, which only hit planes. */
+  kind?: "plane" | "featurePoint";
+}
+
+/**
+ * The tracker's feature points, in virocore (Y-up) world space, metres, with an
+ * id per point that stays the same while the point lives — ARKit's
+ * rawFeaturePoints. Empty until the tracker's scale is metric.
+ */
+export interface ArPointCloud {
+  points: [number, number, number][];
+  identifiers: number[];
 }
 
 /**
@@ -369,6 +403,16 @@ export interface ViroArSessionOptions {
   ) => void;
   /** Called when the set of detected planes changes (added/removed/moved). */
   onAnchorsUpdated?: (anchors: ArPlaneAnchor[]) => void;
+  /**
+   * Read the tracker's feature points every frame: they go to the renderer (for
+   * setPointCloudDisplay), to hit tests as feature-point results, and to
+   * onPointCloudUpdated. Default false; setPointCloudEnabled changes it later.
+   */
+  pointCloud?: boolean;
+  /** Most points read per frame. Default 1000. */
+  maxPoints?: number;
+  /** Called each frame the point cloud is read, with that frame's points. */
+  onPointCloudUpdated?: (cloud: ArPointCloud) => void;
   /** Called once if starting fails (permissions, no camera, engine load error). */
   onError?: (error: Error) => void;
   /**
@@ -552,6 +596,16 @@ function rendererTrackingState(
 
 /** Consecutive degraded frames before the reported state leaves Normal. */
 const STATUS_DEBOUNCE_FRAMES = 15;
+
+/** Reasons that make a tracked frame Limited rather than Normal (ARKit's rule). */
+const DEGRADING_REASONS: ReadonlySet<TrackingReason> = new Set([
+  TrackingReason.ExcessiveMotion,
+  TrackingReason.InsufficientFeatures,
+  TrackingReason.InsufficientLight,
+]);
+
+/** A feature point counts as hit when it is within this angle of the ray (ARKit-like). */
+const FEATURE_POINT_HIT_RAD = 0.02;
 
 /**
  * Consecutive held (Unavailable) frames before anchored content is hidden.
@@ -757,10 +811,14 @@ export class ViroArSession {
   // Last emitted plane set (by id) for change detection.
   private planeSnapshot = new Map<string, ArPlaneAnchor>();
   private lastPlanes: ArPlaneAnchor[] = [];
+  private pointCloudOn = false;
+  private lastPoints: Float32Array = new Float32Array(0);
+  private lastPointIds: Uint32Array = new Uint32Array(0);
 
   constructor(options: ViroArSessionOptions) {
     this.opts = options;
     this.tuning = { ...DEFAULT_TUNING, ...(options.tuning ?? {}) };
+    this.pointCloudOn = !!options.pointCloud;
   }
 
   /**
@@ -1410,7 +1468,13 @@ export class ViroArSession {
     const reason = engine.trackingReason
       ? (engine.trackingReason() as TrackingReason)
       : TrackingReason.None;
-    this.reportStatus(state, engine.trackingQuality(), {
+    // Tracking that holds but says why it is struggling is ARKit's limited
+    // state: excessive motion, too few features or too little light while the
+    // pose still comes. Reported as Normal, the reason never reached the app,
+    // which only hears a reason with a degraded state.
+    const reportedState =
+      state === ViroTrackingState.Normal && DEGRADING_REASONS.has(reason) ? ViroTrackingState.Limited : state;
+    this.reportStatus(reportedState, engine.trackingQuality(), {
       confidence: confidence ?? (state === ViroTrackingState.Normal ? PoseConfidence.Full : PoseConfidence.None),
       reason,
     });
@@ -1443,6 +1507,9 @@ export class ViroArSession {
 
     if (this.opts.detectPlanes) {
       this.emitPlanes();
+    }
+    if (this.pointCloudOn) {
+      this.emitPointCloud();
     }
 
     if (this.opts.showCameraBackground !== false) {
@@ -1519,7 +1586,9 @@ export class ViroArSession {
       const normal = normalize(
         quatRotateVec(FRAME_Q, [engine.planeNormalX(i), engine.planeNormalY(i), engine.planeNormalZ(i)]),
       );
-      const rotation = quatToEulerDeg(quatFromUnitVectors([0, 1, 0], normal));
+      const orient = quatFromUnitVectors([0, 1, 0], normal);
+      const rotation = quatToEulerDeg(orient);
+      const polygon = this.planePolygon(i, center, orient);
       planes.push({
         id: String(engine.planeId(i)),
         center,
@@ -1529,6 +1598,7 @@ export class ViroArSession {
         height: engine.planeExtentZ(i),
         alignment: slamPlaneAlignment(engine.planeType(i)),
         confidence: engine.planeConfidence(i),
+        ...(polygon ? { polygon } : {}),
       });
     }
 
@@ -1537,6 +1607,78 @@ export class ViroArSession {
       this.lastPlanes = planes;
       this.opts.onAnchorsUpdated?.(planes);
     }
+  }
+
+  /**
+   * Plane i's boundary as [x, z] in its local frame (the frame `rotation`
+   * describes, around `center`), or undefined where the engine has none.
+   */
+  private planePolygon(i: number, center: Vec3, orient: Quat): [number, number][] | undefined {
+    const engine = this.engine;
+    const heap = this.module?.HEAPF32;
+    if (!engine?.fetchPlaneBoundary || !engine.boundaryPtr || !heap) return undefined;
+    const n = engine.fetchPlaneBoundary(i);
+    if (n < 3) return undefined;
+    // Re-read the view after the call: it detaches when the heap grows.
+    const f32 = this.module!.HEAPF32!;
+    const base = engine.boundaryPtr() >> 2;
+    const inv: Quat = [-orient[0], -orient[1], -orient[2], orient[3]];
+    const out: [number, number][] = [];
+    for (let k = 0; k < n; k++) {
+      // Z-up to Y-up is (x, y, z) -> (x, z, -y), FRAME_Q written out.
+      const x = f32[base + 3 * k];
+      const y = f32[base + 3 * k + 2];
+      const z = -f32[base + 3 * k + 1];
+      const local = quatRotateVec(inv, [x - center[0], y - center[1], z - center[2]]);
+      out.push([local[0], local[2]]);
+    }
+    return out;
+  }
+
+  /** Read and publish the tracker's feature points (see the pointCloud option). */
+  private emitPointCloud(): void {
+    const engine = this.engine;
+    if (!engine?.fetchPoints || !engine.pointsPtr || !engine.pointIdsPtr) return;
+    const n = engine.fetchPoints(this.opts.maxPoints ?? 1000);
+    const f32 = this.module?.HEAPF32;
+    const u32 = this.module?.HEAPU32;
+    if (!f32 || !u32) return;
+    const p = engine.pointsPtr() >> 2;
+    const q = engine.pointIdsPtr() >> 2;
+    const xyz = new Float32Array(3 * n);
+    for (let k = 0; k < n; k++) {
+      xyz[3 * k] = f32[p + 3 * k];
+      xyz[3 * k + 1] = f32[p + 3 * k + 2];
+      xyz[3 * k + 2] = -f32[p + 3 * k + 1];
+    }
+    const ids = u32.slice(q, q + n);
+    this.lastPoints = xyz;
+    this.lastPointIds = ids;
+    this.opts.sceneApi.arSetPointCloud?.(xyz, ids);
+    if (this.opts.onPointCloudUpdated) {
+      const points: [number, number, number][] = [];
+      for (let k = 0; k < n; k++) points.push([xyz[3 * k], xyz[3 * k + 1], xyz[3 * k + 2]]);
+      this.opts.onPointCloudUpdated({ points, identifiers: Array.from(ids) });
+    }
+  }
+
+  /** Start or stop reading the point cloud (the pointCloud option, at runtime). */
+  setPointCloudEnabled(enabled: boolean): void {
+    this.pointCloudOn = enabled;
+    if (!enabled) {
+      this.lastPoints = new Float32Array(0);
+      this.lastPointIds = new Uint32Array(0);
+      this.opts.sceneApi.arSetPointCloud?.([], []);
+    }
+  }
+
+  /** The most recent point cloud read, or empty. */
+  getPointCloud(): ArPointCloud {
+    const points: [number, number, number][] = [];
+    for (let k = 0; k < this.lastPointIds.length; k++) {
+      points.push([this.lastPoints[3 * k], this.lastPoints[3 * k + 1], this.lastPoints[3 * k + 2]]);
+    }
+    return { points, identifiers: Array.from(this.lastPointIds) };
   }
 
   private planesChanged(planes: ArPlaneAnchor[]): boolean {
@@ -1620,7 +1762,8 @@ export class ViroArSession {
 
   /**
    * Cast a ray from the camera through a screen point and intersect the detected
-   * planes. Returns hits sorted nearest-first (virocore Y-up world space).
+   * planes, and, with the point cloud on, the nearest feature point to the ray.
+   * Returns hits sorted nearest-first (virocore Y-up world space).
    * viewport dims are in the same pixels as screenX/screenY (top-left origin).
    */
   hitTest(screenX: number, screenY: number, viewportW: number, viewportH: number): ArHitResult[] {
@@ -1641,7 +1784,35 @@ export class ViroArSession {
       const t = dot([p.center[0] - origin[0], p.center[1] - origin[1], p.center[2] - origin[2]], p.normal) / denom;
       if (t <= 0) continue;
       const hit: Vec3 = [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
-      hits.push({ anchorId: p.id, position: hit, normal: p.normal, distance: t });
+      hits.push({ anchorId: p.id, position: hit, normal: p.normal, distance: t, kind: "plane" });
+    }
+    // The feature point nearest the ray, as ARKit's featurePoint result: what a
+    // tap can land on before any surface is detected, and on things that are
+    // not flat. Within FEATURE_POINT_HIT_RAD of the ray, in front of the camera.
+    const pts = this.lastPoints;
+    let best = -1;
+    let bestAngle = FEATURE_POINT_HIT_RAD;
+    let bestT = 0;
+    for (let k = 0; k < pts.length / 3; k++) {
+      const v: Vec3 = [pts[3 * k] - origin[0], pts[3 * k + 1] - origin[1], pts[3 * k + 2] - origin[2]];
+      const t = dot(v, dir);
+      if (t <= 0) continue;
+      const len = Math.hypot(v[0], v[1], v[2]);
+      const angle = Math.acos(Math.min(1, t / len));
+      if (angle < bestAngle) {
+        bestAngle = angle;
+        best = k;
+        bestT = t;
+      }
+    }
+    if (best >= 0) {
+      hits.push({
+        anchorId: "",
+        position: [pts[3 * best], pts[3 * best + 1], pts[3 * best + 2]],
+        normal: [-dir[0], -dir[1], -dir[2]],
+        distance: bestT,
+        kind: "featurePoint",
+      });
     }
     return hits.sort((a, b) => a.distance - b.distance);
   }

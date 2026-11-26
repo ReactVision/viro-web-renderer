@@ -120,6 +120,8 @@ export interface ViroWebModule {
 
   viroCreateMaterial(): number;
   viroSetMaterialDiffuseColor(material: number, r: number, g: number, b: number, a: number): void;
+  /** Its presence also means viroSetMaterialTexture takes channels 6 (emission) and 7 (reflective). */
+  viroSetMaterialEmissionColor?(material: number, r: number, g: number, b: number): void;
   viroSetMaterialLightingModel(material: number, model: number): void;
   viroDestroyMaterial(material: number): void;
   viroSetMaterialShininess(material: number, shininess: number): void;
@@ -362,6 +364,7 @@ export interface ViroWebModule {
    */
   viroSetCameraProjection?(node: number, projection: number): void;
   viroSetCameraOrthographicScale?(node: number, scale: number): void;
+  viroSetCameraFieldOfView?(node: number, degrees: number): void;
 
   // Model loading. The bridge writes the file to FS then calls viroLoadModel.
   // format: 0=GLB, 1=glTF, 2=VRX. Callback: (nodeHandle, success).
@@ -415,6 +418,15 @@ export interface ViroWebModule {
   viroARSetCameraIntrinsics?(
     fx: number, fy: number, cx: number, cy: number,
     width: number, height: number,
+  ): void;
+  // The tracker's feature points (Y-up world, flat x,y,z) and their ids, carried
+  // on every AR frame until replaced. Optional: older builds have no point cloud.
+  viroARSetPointCloud?(xyz: number[], ids: number[]): void;
+  // displayPointCloud: draw the points as particles. textureHandle < 0 keeps the
+  // default dot; sx/sy/sz is each particle's world size.
+  viroARDisplayPointCloud?(
+    display: boolean, textureHandle: number,
+    sx: number, sy: number, sz: number, maxPoints: number,
   ): void;
 
   // Emscripten virtual filesystem (exported via EXPORTED_RUNTIME_METHODS=[...,FS]).
@@ -478,6 +490,27 @@ export class ViroRendererAbortError extends Error {
   constructor(reason: string) {
     super(`Viro web renderer aborted: ${reason}`);
     this.name = "ViroRendererAbortError";
+    this.reason = reason;
+  }
+}
+
+/**
+ * `"unsupported"`: the browser gives no WebGL2 context at all (WebGL2 off,
+ * blocklisted GPU, or too old a browser). `"context-lost"`: it gives one that is
+ * already lost, which a GPU reset or a browser reclaiming memory leaves behind.
+ */
+export type ViroWebGLUnavailableReason = "unsupported" | "context-lost";
+
+/** What `create()` rejects with when it cannot get a usable WebGL2 context. */
+export class ViroWebGLUnavailableError extends Error {
+  readonly reason: ViroWebGLUnavailableReason;
+  constructor(reason: ViroWebGLUnavailableReason) {
+    super(
+      reason === "unsupported"
+        ? "Viro web renderer: this browser cannot create a WebGL2 context"
+        : "Viro web renderer: the WebGL2 context was lost before the renderer started",
+    );
+    this.name = "ViroWebGLUnavailableError";
     this.reason = reason;
   }
 }

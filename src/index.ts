@@ -75,11 +75,13 @@ export type {
   ArPlaybackFrame,
   ArPlaneAlignment,
   ArHitResult,
+  ArPointCloud,
 } from "./arSession.js";
-export { ViroRendererAbortError } from "./types.js";
+export { ViroRendererAbortError, ViroWebGLUnavailableError } from "./types.js";
 export type {
   ViroWebModule,
   ViroWebModuleFactory,
   ViroWebRendererOptions,
+  ViroWebGLUnavailableReason,
   LocateFile,
 } from "./types.js";

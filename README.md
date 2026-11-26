@@ -87,7 +87,7 @@ s.addChildNode(s.getRootNode(), node);
 
 ## API
 
-- `ViroWebRenderer.create(options)` → `Promise<ViroWebRenderer>`
+- `ViroWebRenderer.create(options)` → `Promise<ViroWebRenderer>`. Rejects with a `ViroWebGLUnavailableError` when there is no usable WebGL2 context: `reason` is `"unsupported"` (the browser gives none) or `"context-lost"` (the one it gives is already lost)
   - `options.canvas` — `HTMLCanvasElement | string` (element or CSS selector)
   - `options.width?`, `options.height?` — backing-store size in device pixels (defaults to CSS size × `devicePixelRatio`)
   - `options.locateFile?`, `options.assetBaseUrl?`, `options.importGlue?` — where the WASM assets are; see [Bundler integration](#bundler-integration)

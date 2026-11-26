@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.4.0
+
+Needs the virocore web build of 3.3.0 and the tinyvio engine of the same date; both ship in this package. Each new wrapper checks for its export and answers `false`, nothing or the old behaviour on an older binary; nothing existing changes shape.
+
+### Added
+
+- **AR point cloud:** the `pointCloud` and `maxPoints` options, `onPointCloudUpdated`, `setPointCloudEnabled` and `getPointCloud` read the tracker's feature points with stable ids, in metres. `arSetPointCloud` hands them to the renderer and `arDisplayPointCloud` draws them as particles, as `displayPointCloud` does natively.
+- **AR hit tests return feature points:** with the point cloud on, the point nearest the ray (within about a degree) comes back as a `kind: "featurePoint"` result beside the plane hits, which now carry `kind: "plane"`.
+- **AR planes from the live tracker carry `polygon`,** the boundary tinyvio detects, in the plane's local frame.
+- **Cameras:** `setCameraFieldOfView`, a camera node's field of view across the viewport's longer side (0 returns to the default).
+- **Materials:** `setMaterialEmissionColor`, the `Emission` and `Reflective` texture channels (a cube texture from `createTextureCubeRGBA`), and `supportsEmissionAndReflection` to check for them. An older binary leaves both channels alone instead of putting them on the diffuse.
+- **`ViroWebGLUnavailableError`,** exported with its `ViroWebGLUnavailableReason`.
+
+### Changed
+
+- **No gaze reticle:** the web points with a mouse or a finger, and the cursor fixed at the centre of the view only covered the scene.
+- **A tracked frame with a reason is `Limited`,** as ARKit reports it: excessive motion, too few features or too little light while the pose still comes. The renderer still draws the pose; only the reported state changes, so the reason reaches the app.
+
+### Fixed
+
+- **`create()` says when WebGL2 is unavailable.** It rejects with a `ViroWebGLUnavailableError` whose `reason` is `"unsupported"` when the browser gives no WebGL2 context, where it used to reject with a bare `RuntimeError: unreachable` from inside virocore. It also rejects with `"context-lost"` for a canvas whose context was lost before the call, where it used to resolve a renderer that never drew and reported `isContextLost` as `false`.
+- **Surfaces appear in metres.** The engine no longer reports surfaces or points before its scale is metric; the first surfaces on an iPhone used to be tens of metres across and tens of metres away.
+- **Surfaces keep their ids through a tracking loss,** and a box placed after a loss no longer lands metres off: the engine resets its scale with the map and puts the rebuilt map where the old one was.
+
 ## 1.3.0
 
 Needs the virocore web build of 3.2.3; it ships in this package. Each new wrapper checks for its export and answers `false`, `0`, `-1` or `null` on an older binary; nothing existing changes shape.

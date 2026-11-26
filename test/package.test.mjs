@@ -123,11 +123,17 @@ if (!haveSlam) {
     "posePz", "trackingQuality", "getStatus", "fetchPlanes", "planeId",
     "planeCenterX", "planeCenterY", "planeCenterZ", "planeNormalX",
     "planeNormalY", "planeNormalZ", "planeExtentX", "planeExtentZ",
-    "planeType", "planeConfidence",
+    "planeType", "planeConfidence", "fetchPlaneBoundary", "boundaryPtr",
+    "fetchPoints", "pointsPtr", "pointIdsPtr",
   ];
   const absent = drives.filter((n) => !slamWasm.includes(n));
   assert.deepEqual(absent, [], "the engine does not expose what ViroArSession drives");
   console.log(`  ok  bundled tracking engine exposes all ${drives.length} members driven`);
+  // Plane boundaries and map points are read straight out of the heap.
+  for (const view of ["HEAPF32", "HEAPU32"]) {
+    assert.ok(slamGlue.includes(`Module["${view}"]`) || slamGlue.includes(`Module.${view}`),
+      `the engine glue does not export ${view}, which boundaries and points are read through`);
+  }
 
   assert.ok(pkg.files.includes("slam"), 'package.json "files" must include slam');
 
