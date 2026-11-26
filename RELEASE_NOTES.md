@@ -1,5 +1,30 @@
 # Release Notes
 
+## 1.4.0
+
+Web AR in the right place and with more to read: surfaces come out in metres and keep their ids through a tracking loss, and the tracker's point cloud, feature-point hits and each surface's polygon reach the app. Cameras take a field of view, materials take emission and reflection, `create()` says when the browser has no usable WebGL2, and the gaze reticle is gone. Built on virocore 3.3.0's web build and the tinyvio engine of the same date, both in this package; what `@reactvision/react-viro` 3.3.0's web components need.
+
+### Added
+
+- **AR point cloud:** `pointCloud`, `onPointCloudUpdated`, `setPointCloudEnabled` and `getPointCloud`, in metres with stable ids; `arDisplayPointCloud` draws it.
+- **AR hit tests** return the feature point nearest the ray (`kind: "featurePoint"`); plane hits carry `kind: "plane"`.
+- **AR planes** from the live tracker carry `polygon`.
+- **Cameras:** `setCameraFieldOfView`. **Materials:** `setMaterialEmissionColor` and the `Emission` and `Reflective` texture channels.
+
+### Changed
+
+- **A tracked frame with a reason is `Limited`,** as ARKit reports it, so the reason reaches the app.
+- **No gaze reticle.**
+
+### Fixed
+
+- **Surfaces appear in metres,** and **keep their ids through a tracking loss.** The first surfaces on an iPhone used to be tens of metres across and away, and a box placed after a loss landed metres off.
+- **`create()` rejects with `ViroWebGLUnavailableError`** (`"unsupported"` or `"context-lost"`) instead of a bare `RuntimeError: unreachable`, or a renderer that never drew.
+
+### Check when upgrading
+
+- **Copy the whole `wasm/` and `slam/` folders** again: both binaries are new, and older viro releases keep working with them.
+
 ## 1.3.0
 
 Bindings for virocore 3.2.3's web build: portal backgrounds and events, per-face materials, full particle settings, physics queries and held forces, post-process effects, node pivots, mouse hover and scene-wide controller events. Web AR crops the camera feed instead of stretching it and runs faster on Android. What viro's web components need for the parity work in `@reactvision/react-viro` 3.2.3.

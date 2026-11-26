@@ -1,17 +1,21 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
 
-Needs the virocore web build from `fix/web-ar-tracker` (point cloud) and the tinyvio engine from the same branch (boundaries, points, surfaces through a loss); both ship in this package. Against older binaries the new calls answer `false` or nothing, and nothing existing changes shape.
+Needs the virocore web build of 3.3.0 and the tinyvio engine of the same date; both ship in this package. Each new wrapper checks for its export and answers `false`, nothing or the old behaviour on an older binary; nothing existing changes shape.
 
 ### Added
 
 - **AR point cloud:** the `pointCloud` and `maxPoints` options, `onPointCloudUpdated`, `setPointCloudEnabled` and `getPointCloud` read the tracker's feature points with stable ids, in metres. `arSetPointCloud` hands them to the renderer and `arDisplayPointCloud` draws them as particles, as `displayPointCloud` does natively.
 - **AR hit tests return feature points:** with the point cloud on, the point nearest the ray (within about a degree) comes back as a `kind: "featurePoint"` result beside the plane hits, which now carry `kind: "plane"`.
 - **AR planes from the live tracker carry `polygon`,** the boundary tinyvio detects, in the plane's local frame.
+- **Cameras:** `setCameraFieldOfView`, a camera node's field of view across the viewport's longer side (0 returns to the default).
+- **Materials:** `setMaterialEmissionColor`, the `Emission` and `Reflective` texture channels (a cube texture from `createTextureCubeRGBA`), and `supportsEmissionAndReflection` to check for them. An older binary leaves both channels alone instead of putting them on the diffuse.
+- **`ViroWebGLUnavailableError`,** exported with its `ViroWebGLUnavailableReason`.
 
 ### Changed
 
+- **No gaze reticle:** the web points with a mouse or a finger, and the cursor fixed at the centre of the view only covered the scene.
 - **A tracked frame with a reason is `Limited`,** as ARKit reports it: excessive motion, too few features or too little light while the pose still comes. The renderer still draws the pose; only the reported state changes, so the reason reaches the app.
 
 ### Fixed
