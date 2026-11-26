@@ -120,6 +120,8 @@ export interface ViroWebModule {
 
   viroCreateMaterial(): number;
   viroSetMaterialDiffuseColor(material: number, r: number, g: number, b: number, a: number): void;
+  /** Its presence also means viroSetMaterialTexture takes channels 6 (emission) and 7 (reflective). */
+  viroSetMaterialEmissionColor?(material: number, r: number, g: number, b: number): void;
   viroSetMaterialLightingModel(material: number, model: number): void;
   viroDestroyMaterial(material: number): void;
   viroSetMaterialShininess(material: number, shininess: number): void;
@@ -362,6 +364,7 @@ export interface ViroWebModule {
    */
   viroSetCameraProjection?(node: number, projection: number): void;
   viroSetCameraOrthographicScale?(node: number, scale: number): void;
+  viroSetCameraFieldOfView?(node: number, degrees: number): void;
 
   // Model loading. The bridge writes the file to FS then calls viroLoadModel.
   // format: 0=GLB, 1=glTF, 2=VRX. Callback: (nodeHandle, success).

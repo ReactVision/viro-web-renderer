@@ -27,6 +27,10 @@ export enum ViroTextureChannel {
   Roughness = 3,
   Metalness = 4,
   AmbientOcclusion = 5,
+  /** Needs supportsEmissionAndReflection. */
+  Emission = 6,
+  /** A cube texture (createTextureCubeRGBA). Needs supportsEmissionAndReflection. */
+  Reflective = 7,
 }
 
 /** Mirrors VROWrapMode (VROTexture.h). */
@@ -671,6 +675,16 @@ export class ViroSceneApi {
   ): void {
     this.m.viroSetMaterialDiffuseColor(material, r, g, b, a);
   }
+  /** False on a wasm without setMaterialEmissionColor and the Emission and Reflective texture channels. */
+  get supportsEmissionAndReflection(): boolean {
+    return typeof this.m.viroSetMaterialEmissionColor === "function";
+  }
+  /** Black (the default) emits nothing, and also blacks out an Emission texture, which it scales. False on an older wasm. */
+  setMaterialEmissionColor(material: ViroHandle, r: number, g: number, b: number): boolean {
+    if (typeof this.m.viroSetMaterialEmissionColor !== "function") return false;
+    this.m.viroSetMaterialEmissionColor(material, r, g, b);
+    return true;
+  }
   setMaterialLightingModel(material: ViroHandle, model: ViroLightingModel): void {
     this.m.viroSetMaterialLightingModel(material, model);
   }
@@ -1038,6 +1052,8 @@ export class ViroSceneApi {
     this.m.viroSetTextureFilter(texture, min, mag, mip);
   }
   setMaterialTexture(material: ViroHandle, channel: ViroTextureChannel, texture: ViroHandle): void {
+    // An older wasm puts a channel it does not know on the diffuse.
+    if (channel > ViroTextureChannel.AmbientOcclusion && !this.supportsEmissionAndReflection) return;
     this.m.viroSetMaterialTexture(material, channel, texture);
   }
   destroyTexture(texture: ViroHandle): void {
@@ -1388,6 +1404,14 @@ export class ViroSceneApi {
       return false;
     }
     this.m.viroSetCameraOrthographicScale(node, scale);
+    return true;
+  }
+  /** Degrees across the viewport's longer side, as ViroCamera's fieldOfView; 0 is the renderer's default. False on an older wasm. */
+  setCameraFieldOfView(node: ViroHandle, degrees: number): boolean {
+    if (typeof this.m.viroSetCameraFieldOfView !== "function") {
+      return false;
+    }
+    this.m.viroSetCameraFieldOfView(node, degrees);
     return true;
   }
 
